@@ -45,6 +45,19 @@ pwsh ./server.ps1 -Port 8081 -PrefsDir "C:\path\to\your\configs"
 7. **Search** — filters by key, value, description, or tag across whichever
    view/table is active.
 
+## AI Usage
+
+The header includes an AI usage badge:
+
+```text
+AI-assisted Build
+Made with Ona · Claude Sonnet 5
+Design, implementation & docs
+```
+
+It's there to make LLM assistance in this project's design, implementation, and
+documentation visible.
+
 ## Where things are stored
 
 - `annotations.json` (next to `server.ps1`) — your descriptions/tags,

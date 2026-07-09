@@ -10,7 +10,22 @@
   <header class="app-header">
     <h1>Config Knowledge Map</h1>
     <span id="current-file-label" class="current-file-label">No file loaded</span>
-    <span id="annotated-count" class="annotated-count"></span>
+    <div class="header-right">
+      <div class="ai-badge" aria-label="AI development usage">
+        <svg class="ai-badge-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="5" r="2.3" />
+          <circle cx="5" cy="18" r="2.3" />
+          <circle cx="19" cy="18" r="2.3" />
+          <path d="M12 7.3 6.7 15.8M12 7.3l5.3 8.5M7.5 18h9" />
+        </svg>
+        <span class="ai-badge-copy">
+          <span>AI-assisted Build</span>
+          <em>Made with Ona &middot; Claude Sonnet 5</em>
+          <small>Design, implementation &amp; docs</small>
+        </span>
+      </div>
+      <span id="annotated-count" class="annotated-count"></span>
+    </div>
   </header>
 
   <section class="toolbar">
