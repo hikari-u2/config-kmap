@@ -57,7 +57,10 @@ function Get-MimeType($path) {
 }
 
 function Write-JsonResponse($response, $obj, [int]$statusCode = 200) {
-    $json = $obj | ConvertTo-Json -Depth 10 -Compress
+    # Depth > 2 makes Windows PowerShell 5.1's ConvertTo-Json recurse into
+    # string characters, which explodes exponentially on file-content-sized
+    # strings (e.g. /api/read-pref) and can hang the single-threaded server.
+    $json = $obj | ConvertTo-Json -Depth 2 -Compress
     $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
     $response.StatusCode = $statusCode
     $response.ContentType = "application/json; charset=utf-8"
@@ -162,7 +165,10 @@ try {
                     if (-not (Test-Path $full -PathType Leaf)) {
                         Write-JsonResponse $response @{ error = "File not found: $full" } 404
                     } else {
-                        $content = Get-Content -Path $full -Raw -Encoding UTF8
+                        # File.ReadAllText avoids Get-Content's ETS decoration
+                        # (PSPath, PSDrive, ...), which ConvertTo-Json would
+                        # otherwise serialize instead of a plain string.
+                        $content = [System.IO.File]::ReadAllText($full)
                         Write-JsonResponse $response @{ path = $full; content = $content }
                     }
                 }
