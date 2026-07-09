@@ -1,0 +1,8 @@
+# User-specific data written by the app at runtime (server auto-creates
+# these if missing). Not source code, so not tracked.
+annotations.json
+groups.json
+
+# OS/editor cruft
+.DS_Store
+*.swp

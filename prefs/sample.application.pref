@@ -1,0 +1,37 @@
+# Example Java application.pref file (dotted key=value format)
+# Lines starting with # are comments and blank lines are ignored.
+
+app.name=MyApplication
+app.version=3.2.1
+app.locale=en_US
+
+ui.window.width=1024
+ui.window.height=768
+ui.window.maximized=false
+ui.theme=dark
+ui.font.size=12
+ui.font.family=Segoe UI
+
+network.proxy.enabled=false
+network.proxy.host=proxy.internal
+network.proxy.port=8080
+network.timeout.connectMs=5000
+network.timeout.readMs=15000
+
+db.connection.url=jdbc:h2:file:./data/appdb
+db.connection.poolSize=10
+db.connection.retry.enabled=true
+db.connection.retry.maxAttempts=3
+
+logging.level=INFO
+logging.file.path=./logs/app.log
+logging.file.maxSizeMb=50
+logging.file.maxBackups=5
+
+hi.bye.field=10
+hi.bye.otherField=hello
+hi.greeting.enabled=true
+
+security.session.timeoutMinutes=30
+security.session.rememberMe=false
+security.encryption.algorithm=AES256
