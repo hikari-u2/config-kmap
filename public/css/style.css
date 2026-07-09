@@ -305,6 +305,44 @@ tbody td {
   z-index: 5;
 }
 
+.tree-view {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: var(--bg);
+}
+.tree-view.hidden { display: none; }
+.tree-svg { width: 100%; height: 100%; cursor: grab; }
+
+.tree-edge { fill: none; stroke: var(--border); stroke-width: 1.5; transition: opacity 0.1s; }
+.tree-edge--trunk { stroke: var(--border); }
+.tree-edge--useful { stroke: var(--leaf); opacity: 0.7; }
+.tree-edge--useless { stroke: var(--error); opacity: 0.7; }
+.tree-edge--unset { stroke: var(--text-dim); opacity: 0.45; }
+.tree-edge--dimmed { opacity: 0.06; }
+.tree-edge--focused { opacity: 1; stroke-width: 2.2; }
+
+.tree-node circle { fill: var(--section); stroke: #0009; stroke-width: 1; }
+.tree-node--leaf circle { stroke: #0009; }
+.tree-node--annotated circle { stroke: var(--accent); stroke-width: 2.5; }
+.tree-node text { fill: var(--text); font-size: 11px; pointer-events: none; font-family: "SF Mono", Consolas, monospace; }
+.tree-node { cursor: pointer; }
+.tree-node--dimmed { opacity: 0.15; }
+.tree-node--focused circle { stroke: #fff; stroke-width: 2; }
+.tree-node--focused text { fill: #fff; font-weight: 600; }
+
+.tooltip-status {
+  display: inline-block;
+  margin-top: 0.15rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  color: #08131c;
+}
+.tooltip-status--useful { background: var(--leaf); }
+.tooltip-status--useless { background: var(--error); color: #1a0a0a; }
+.tooltip-status--unset { background: var(--text-dim); color: #101216; }
+
 .detail-panel {
   width: 320px;
   border-left: 1px solid var(--border);
@@ -333,6 +371,23 @@ tbody td {
   border-radius: 4px;
 }
 #detail-description, #detail-tags { width: 100%; resize: vertical; }
+
+.detail-label-hint { color: var(--text-dim); font-weight: normal; font-size: 0.7rem; }
+.detail-status { display: flex; gap: 0.4rem; }
+.status-btn {
+  flex: 1;
+  font-size: 0.72rem;
+  padding: 0.35rem 0.3rem;
+  background: var(--panel-alt);
+  border-color: var(--border);
+  color: var(--text-dim);
+}
+.status-btn--useless { border-color: var(--error); }
+.status-btn--useless.active { background: var(--error); border-color: var(--error); color: #1a0a0a; }
+.status-btn--useful { border-color: var(--leaf); }
+.status-btn--useful.active { background: var(--leaf); border-color: var(--leaf); color: #06170f; }
+.status-btn--unset.active { background: var(--text-dim); border-color: var(--text-dim); color: #101216; }
+.status-btn:hover { opacity: 0.85; }
 
 .status-bar {
   padding: 0.4rem 1rem;

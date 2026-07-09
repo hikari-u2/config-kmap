@@ -61,6 +61,7 @@
     <div class="toolbar-group toolbar-group--views">
       <button id="view-table-btn" class="view-btn">Table</button>
       <button id="view-graph-btn" class="view-btn">Graph</button>
+      <button id="view-tree-btn" class="view-btn">Tree</button>
     </div>
   </section>
 
@@ -92,6 +93,15 @@
       <div id="graph-legend" class="graph-legend"></div>
     </div>
 
+    <div id="tree-view" class="tree-view hidden">
+      <button id="tree-fit-view-btn" class="graph-fit-btn">Fit to view</button>
+      <div id="tree-legend" class="graph-legend">
+        <div class="graph-legend-row"><span class="graph-legend-swatch" style="background:#eb5757"></span> Not interested (left)</div>
+        <div class="graph-legend-row"><span class="graph-legend-swatch" style="background:#6fcf97"></span> Useful (right)</div>
+        <div class="graph-legend-row"><span class="graph-legend-swatch" style="background:#9aa1ad"></span> Unset</div>
+      </div>
+    </div>
+
     <aside id="detail-panel" class="detail-panel hidden">
       <h2 id="detail-key">—</h2>
       <div class="detail-row">
@@ -107,6 +117,14 @@
         <input id="detail-tags" type="text" placeholder="ui, timeout, deprecated..." />
       </div>
       <div class="detail-row">
+        <label>Status <span class="detail-label-hint">(placement in Tree view)</span></label>
+        <div id="detail-status" class="detail-status" role="radiogroup" aria-label="Field status">
+          <button type="button" class="status-btn status-btn--useless" data-status="useless">&larr; Not interested</button>
+          <button type="button" class="status-btn status-btn--unset" data-status="">Unset</button>
+          <button type="button" class="status-btn status-btn--useful" data-status="useful">Useful &rarr;</button>
+        </div>
+      </div>
+      <div class="detail-row">
         <label>Groups</label>
         <div id="detail-groups" class="detail-groups"></div>
       </div>
@@ -120,6 +138,7 @@
   <script src="js/annotations.js"></script>
   <script src="js/groups.js"></script>
   <script src="js/graph.js"></script>
+  <script src="js/tree.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

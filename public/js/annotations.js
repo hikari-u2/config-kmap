@@ -11,7 +11,11 @@
  *
  * Shape of the annotations object:
  *   {
- *     "hi.bye.field": { "description": "...", "tags": ["tag1", "tag2"] },
+ *     "hi.bye.field": {
+ *       "description": "...",
+ *       "tags": ["tag1", "tag2"],
+ *       "status": "useful" | "useless" | ""   // placement in Tree view; "" = unset
+ *     },
  *     ...
  *   }
  */
@@ -61,7 +65,7 @@ async function saveAnnotations(all) {
 
 async function getAnnotation(key) {
   const all = await loadAnnotations();
-  return all[key] || { description: '', tags: [] };
+  return all[key] || { description: '', tags: [], status: '' };
 }
 
 async function setAnnotation(key, annotation) {

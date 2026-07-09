@@ -11,7 +11,8 @@
     groups: { groups: [] },
     activeKey: null,
     groupFilter: '', // group id, or '' for all
-    view: 'table', // 'table' | 'graph'
+    view: 'table', // 'table' | 'graph' | 'tree'
+    pendingStatus: '', // status selected in detail panel before save (also applied immediately)
   };
 
   const el = {
@@ -24,13 +25,16 @@
     tableBody: document.getElementById('table-body'),
     tableView: document.getElementById('table-view'),
     graphView: document.getElementById('graph-view'),
+    treeView: document.getElementById('tree-view'),
     viewTableBtn: document.getElementById('view-table-btn'),
     viewGraphBtn: document.getElementById('view-graph-btn'),
+    viewTreeBtn: document.getElementById('view-tree-btn'),
     detailPanel: document.getElementById('detail-panel'),
     detailKey: document.getElementById('detail-key'),
     detailValue: document.getElementById('detail-value'),
     detailDescription: document.getElementById('detail-description'),
     detailTags: document.getElementById('detail-tags'),
+    detailStatus: document.getElementById('detail-status'),
     saveAnnotationBtn: document.getElementById('save-annotation-btn'),
     status: document.getElementById('status-bar'),
     currentFileLabel: document.getElementById('current-file-label'),
@@ -42,6 +46,7 @@
     detailGroups: document.getElementById('detail-groups'),
     fitViewBtn: document.getElementById('fit-view-btn'),
     graphLegend: document.getElementById('graph-legend'),
+    treeFitViewBtn: document.getElementById('tree-fit-view-btn'),
   };
 
   const graph = window.KMapGraph.createGraph(el.graphView);
@@ -59,6 +64,28 @@
       tags: ann ? ann.tags : [],
     };
   });
+
+  const tree = window.KMapTree.createTree(el.treeView);
+  tree.onNodeClick(async (key, isLeaf, value) => {
+    await showDetail(key, isLeaf, value);
+  });
+  tree.setAnnotationChecker((key) => Boolean(state.annotations[key] && state.annotations[key].description));
+  tree.setGroupsChecker((key) => groupsForKey(key));
+  tree.setInfoProvider((key) => {
+    const entry = state.entries.find((e) => e.key === key);
+    const ann = state.annotations[key];
+    return {
+      value: entry ? entry.value : '',
+      description: ann ? ann.description : '',
+      tags: ann ? ann.tags : [],
+    };
+  });
+  tree.setStatusProvider((key) => statusForKey(key));
+
+  function statusForKey(key) {
+    const ann = state.annotations[key];
+    return ann && ann.status ? ann.status : '';
+  }
 
   function groupsForKey(key) {
     return state.groups.groups.filter((g) => g.keys.includes(key));
@@ -133,6 +160,7 @@
     setStatus(`Loaded ${state.entries.length} entries from ${label}`);
     renderTable();
     renderGraph();
+    renderTree();
     updateAnnotatedCount();
   }
 
@@ -216,6 +244,12 @@
     setTimeout(() => graph.fitToView(), 400);
   }
 
+  function renderTree() {
+    if (!state.tree) return;
+    tree.setData(state.tree);
+    setTimeout(() => tree.fitToView(), 0);
+  }
+
   function renderGraphLegend() {
     el.graphLegend.innerHTML = '';
 
@@ -247,8 +281,27 @@
     const ann = await window.Annotations.getAnnotation(key);
     el.detailDescription.value = ann.description || '';
     el.detailTags.value = (ann.tags || []).join(', ');
+    state.pendingStatus = ann.status || '';
+    updateStatusButtons();
 
     renderDetailGroups(key);
+  }
+
+  function updateStatusButtons() {
+    for (const btn of el.detailStatus.querySelectorAll('.status-btn')) {
+      btn.classList.toggle('active', btn.dataset.status === state.pendingStatus);
+    }
+  }
+
+  async function setStatusForActiveKey(status) {
+    if (!state.activeKey) return;
+    state.pendingStatus = status;
+    updateStatusButtons();
+    const ann = await window.Annotations.getAnnotation(state.activeKey);
+    await window.Annotations.setAnnotation(state.activeKey, { ...ann, status });
+    state.annotations = await window.Annotations.loadAnnotations();
+    renderTree();
+    setStatus(`Marked "${state.activeKey}" as ${status || 'unset'}`);
   }
 
   function renderDetailGroups(key) {
@@ -290,6 +343,7 @@
     renderGroupsBar();
     renderTable();
     renderGraph();
+    renderTree();
     setStatus(`Updated groups for "${key}"`);
   }
 
@@ -301,11 +355,12 @@
       .map((t) => t.trim())
       .filter(Boolean);
 
-    await window.Annotations.setAnnotation(state.activeKey, { description, tags });
+    await window.Annotations.setAnnotation(state.activeKey, { description, tags, status: state.pendingStatus });
     state.annotations = await window.Annotations.loadAnnotations();
     setStatus(`Saved annotation for "${state.activeKey}"`);
     renderTable();
     renderGraph();
+    renderTree();
     updateAnnotatedCount();
   }
 
@@ -350,6 +405,7 @@
         renderGroupsBar();
         renderTable();
         renderGraph();
+        renderTree();
         if (state.activeKey) renderDetailGroups(state.activeKey);
       });
       chip.appendChild(deleteBtn);
@@ -382,9 +438,12 @@
     state.view = view;
     el.tableView.classList.toggle('hidden', view !== 'table');
     el.graphView.classList.toggle('hidden', view !== 'graph');
+    el.treeView.classList.toggle('hidden', view !== 'tree');
     el.viewTableBtn.classList.toggle('active', view === 'table');
     el.viewGraphBtn.classList.toggle('active', view === 'graph');
+    el.viewTreeBtn.classList.toggle('active', view === 'tree');
     if (view === 'graph') graph.resize();
+    if (view === 'tree') { tree.resize(); renderTree(); }
   }
 
   el.scanBtn.addEventListener('click', scanFolder);
@@ -394,8 +453,13 @@
   el.saveAnnotationBtn.addEventListener('click', saveCurrentAnnotation);
   el.viewTableBtn.addEventListener('click', () => switchView('table'));
   el.viewGraphBtn.addEventListener('click', () => switchView('graph'));
+  el.viewTreeBtn.addEventListener('click', () => switchView('tree'));
   el.newGroupBtn.addEventListener('click', addNewGroup);
   el.fitViewBtn.addEventListener('click', () => graph.fitToView());
+  el.treeFitViewBtn.addEventListener('click', () => tree.fitToView());
+  for (const btn of el.detailStatus.querySelectorAll('.status-btn')) {
+    btn.addEventListener('click', () => setStatusForActiveKey(btn.dataset.status));
+  }
   el.newGroupName.addEventListener('keydown', (e) => { if (e.key === 'Enter') addNewGroup(); });
   el.groupFilterSelect.addEventListener('change', () => {
     state.groupFilter = el.groupFilterSelect.value;
