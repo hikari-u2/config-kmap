@@ -8,6 +8,11 @@ your own notes attached to each key so you stop forgetting what fields mean.
 
 Requires PowerShell (`pwsh`). Install: https://aka.ms/powershell-release
 
+**Windows, one click:** double-click [start-server.bat](start-server.bat) (or pin
+a shortcut to it) — it starts the server and opens the app in your browser.
+
+Or from a terminal:
+
 ```powershell
 pwsh ./server.ps1
 ```
@@ -87,6 +92,7 @@ The dotted key is split on `.` to build the graph's parent/child structure.
 
 ```
 server.ps1           PowerShell HTTP server (static files + JSON API)
+start-server.bat      Windows one-click launcher for server.ps1
 public/
   index.html
   css/style.css

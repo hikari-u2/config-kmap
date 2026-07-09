@@ -96,7 +96,9 @@ function Resolve-SafePath([string]$root, [string]$relativeOrAbsolute) {
 Add-Type -AssemblyName System.Web
 
 $listener = [System.Net.HttpListener]::new()
-$prefix = "http://+:$Port/"
+# "localhost" (unlike a wildcard "+" or "*" prefix) is exempt from Windows'
+# URL ACL reservation, so this binds without requiring an elevated process.
+$prefix = "http://localhost:$Port/"
 $listener.Prefixes.Add($prefix)
 
 try {
@@ -113,9 +115,19 @@ Write-Host "Annotations file:          $AnnotationsFile"
 Write-Host "Groups file:               $GroupsFile"
 Write-Host "Press Ctrl+C to stop."
 
+# A plain blocking GetContext() call has no return point until a request
+# arrives, so PowerShell's Ctrl+C break handling (which only interrupts
+# between statements) never gets a chance to run and Ctrl+C appears to do
+# nothing. Polling the async accept with a short wait instead gives the
+# engine a safe point every 250ms, so Ctrl+C is picked up quickly and still
+# unwinds through the try/finally below for a clean shutdown.
 try {
     while ($listener.IsListening) {
-        $context = $listener.GetContext()
+        $asyncResult = $listener.BeginGetContext($null, $null)
+        while (-not $asyncResult.AsyncWaitHandle.WaitOne(250)) {
+            # Loop back around so a pending Ctrl+C can interrupt here.
+        }
+        $context = $listener.EndGetContext($asyncResult)
         $request = $context.Request
         $response = $context.Response
 
@@ -223,4 +235,5 @@ try {
 } finally {
     $listener.Stop()
     $listener.Close()
+    Write-Host "Server stopped."
 }

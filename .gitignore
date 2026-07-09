@@ -6,3 +6,6 @@ groups.json
 # OS/editor cruft
 .DS_Store
 *.swp
+
+# Server stdout/stderr captured during manual test runs
+*.log
