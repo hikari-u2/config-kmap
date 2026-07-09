@@ -47,7 +47,7 @@ function createTree(container) {
   let hasAnnotationFn = null;
   let groupsForNodeFn = null;
   let infoForNodeFn = null;
-  let statusForKeyFn = null; // (key) => 'useful' | 'useless' | ''
+  let statusForKeyFn = null; // (key) => { status: 'useful'|'useless'|'', inherited: bool }
   let hoveredKey = null;
   let adjacency = new Map();
 
@@ -118,8 +118,10 @@ function createTree(container) {
     let rowIndex = 0;
 
     function statusOf(key) {
-      const s = statusForKeyFn ? statusForKeyFn(key) : '';
-      return s === 'useful' || s === 'useless' ? s : '';
+      const eff = statusForKeyFn ? statusForKeyFn(key) : null;
+      if (!eff) return { status: '', inherited: false };
+      const s = eff.status === 'useful' || eff.status === 'useless' ? eff.status : '';
+      return { status: s, inherited: Boolean(s && eff.inherited) };
     }
 
     function visit(node, depth, parentId) {
@@ -130,12 +132,14 @@ function createTree(container) {
         const y = rowHeight + rowIndex * rowHeight;
         rowIndex++;
 
+        // Every node (sections included) carries a status now; sections stay
+        // on the trunk but get colored, leaves branch left/right by their
+        // effective (own or inherited) status.
+        const eff = statusOf(node.fullKey);
         let x;
-        let status = null;
         if (node.isLeaf) {
-          status = statusOf(node.fullKey);
-          const dir = status === 'useful' ? 1 : status === 'useless' ? -1 : 0;
-          const dist = branchDist[status] != null ? branchDist[status] : branchDist[''];
+          const dir = eff.status === 'useful' ? 1 : eff.status === 'useless' ? -1 : 0;
+          const dist = branchDist[eff.status] != null ? branchDist[eff.status] : branchDist[''];
           // Branch out from the trunk position at this depth, not from
           // absolute center, so nested leaves still read as "attached" to
           // their parent section's trunk column.
@@ -153,7 +157,8 @@ function createTree(container) {
           depth,
           x,
           y,
-          status,
+          status: eff.status,
+          statusInherited: eff.inherited,
         });
         edges.push({ source: parentId, target: node.fullKey });
         currentId = node.fullKey;
@@ -240,7 +245,14 @@ function createTree(container) {
       const radius = n.isLeaf ? 6 : 9;
       const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
       circle.setAttribute('r', radius);
-      if (n.isLeaf) circle.setAttribute('fill', statusColor(n.status));
+      // Inline style so it wins over the stylesheet's class-based fill
+      // (a fill *attribute* would be overridden by `.tree-node circle`).
+      if (n.isLeaf) {
+        circle.style.fill = statusColor(n.status);
+      } else if (n.status) {
+        circle.style.fill = statusColor(n.status);
+      }
+      if (n.statusInherited) g.classList.add('tree-node--inherited');
       g.appendChild(circle);
 
       const memberGroups = groupsForNodeFn ? groupsForNodeFn(n.id) : [];
@@ -306,8 +318,9 @@ function createTree(container) {
     if (n.isLeaf) html += `<div class="tooltip-value">${escapeHtml(n.value)}</div>`;
     if (info && info.description) html += `<div class="tooltip-desc">${escapeHtml(info.description)}</div>`;
     if (info && info.tags && info.tags.length) html += `<div class="tooltip-tags">${info.tags.map(escapeHtml).join(', ')}</div>`;
-    if (n.isLeaf) {
-      const statusLabel = n.status === 'useful' ? 'Useful' : n.status === 'useless' ? 'Not interested' : 'Unset';
+    if (n.isLeaf || n.status) {
+      const base = n.status === 'useful' ? 'Useful' : n.status === 'useless' ? 'Not interested' : 'Unset';
+      const statusLabel = n.statusInherited ? `${base} (inherited)` : base;
       html += `<div class="tooltip-status tooltip-status--${n.status || 'unset'}">${statusLabel}</div>`;
     }
     if (groupsList.length) {

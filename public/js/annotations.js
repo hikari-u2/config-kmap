@@ -14,7 +14,10 @@
  *     "hi.bye.field": {
  *       "description": "...",
  *       "tags": ["tag1", "tag2"],
- *       "status": "useful" | "useless" | ""   // placement in Tree view; "" = unset
+ *       "status": "useful" | "useless" | ""   // "" = unset. Can be set on any
+ *                 // node — leaf fields AND section keys. Descendants without
+ *                 // their own status inherit the nearest ancestor's status.
+ *                 // Shown in all views (table badge, graph/tree colors).
  *     },
  *     ...
  *   }

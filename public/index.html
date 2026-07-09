@@ -79,6 +79,7 @@
           <tr>
             <th>Key</th>
             <th>Value</th>
+            <th>Status</th>
             <th>Description</th>
             <th>Tags</th>
             <th>Groups</th>
@@ -99,6 +100,7 @@
         <div class="graph-legend-row"><span class="graph-legend-swatch" style="background:#eb5757"></span> Not interested (left)</div>
         <div class="graph-legend-row"><span class="graph-legend-swatch" style="background:#6fcf97"></span> Useful (right)</div>
         <div class="graph-legend-row"><span class="graph-legend-swatch" style="background:#9aa1ad"></span> Unset</div>
+        <div class="graph-legend-row"><span class="graph-legend-swatch" style="background:#6fcf97;opacity:0.5"></span> Inherited from parent</div>
       </div>
     </div>
 
@@ -117,12 +119,13 @@
         <input id="detail-tags" type="text" placeholder="ui, timeout, deprecated..." />
       </div>
       <div class="detail-row">
-        <label>Status <span class="detail-label-hint">(placement in Tree view)</span></label>
+        <label>Status <span class="detail-label-hint">(applies to this node and all its subnodes)</span></label>
         <div id="detail-status" class="detail-status" role="radiogroup" aria-label="Field status">
           <button type="button" class="status-btn status-btn--useless" data-status="useless">&larr; Not interested</button>
           <button type="button" class="status-btn status-btn--unset" data-status="">Unset</button>
           <button type="button" class="status-btn status-btn--useful" data-status="useful">Useful &rarr;</button>
         </div>
+        <div id="detail-status-inherited" class="detail-status-inherited hidden"></div>
       </div>
       <div class="detail-row">
         <label>Groups</label>

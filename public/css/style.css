@@ -197,11 +197,13 @@ thead th {
   color: var(--text-dim);
 }
 /* Key gets no fixed width so long dotted keys can push the column wider;
-   the other columns keep a comfortable minimum so they don't collapse. */
-th:nth-child(2), td:nth-child(2) { width: 16%; }
-th:nth-child(3), td:nth-child(3) { width: 34%; }
-th:nth-child(4), td:nth-child(4) { width: 14%; }
-th:nth-child(5), td:nth-child(5) { width: 10%; }
+   the other columns keep a comfortable minimum so they don't collapse.
+   Columns: Key, Value, Status, Description, Tags, Groups. */
+th:nth-child(2), td:nth-child(2) { width: 15%; }
+th:nth-child(3), td:nth-child(3) { width: 11%; }
+th:nth-child(4), td:nth-child(4) { width: 30%; }
+th:nth-child(5), td:nth-child(5) { width: 13%; }
+th:nth-child(6), td:nth-child(6) { width: 9%; }
 tbody tr { cursor: pointer; }
 tbody tr:hover { background: var(--panel-alt); }
 tbody td {
@@ -220,6 +222,16 @@ tbody td {
   text-overflow: unset;
 }
 .cell-value { font-family: "SF Mono", Consolas, monospace; color: var(--text); }
+.status-badge {
+  display: inline-block;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  color: #08131c;
+}
+.status-badge--useful { background: var(--leaf); }
+.status-badge--useless { background: var(--error); color: #1a0a0a; }
+.status-badge--inherited { opacity: 0.55; }
 .cell-description--empty::after { content: "—"; color: var(--text-dim); }
 .cell-tags { color: var(--section); font-size: 0.78rem; }
 
@@ -243,6 +255,7 @@ tbody td {
 .graph-node--dimmed { opacity: 0.15; }
 .graph-node--focused circle { stroke: #fff; stroke-width: 2; }
 .graph-node--focused text { fill: #fff; font-weight: 600; }
+.graph-node--inherited circle { fill-opacity: 0.55; }
 
 .graph-tooltip {
   position: absolute;
@@ -330,6 +343,7 @@ tbody td {
 .tree-node--dimmed { opacity: 0.15; }
 .tree-node--focused circle { stroke: #fff; stroke-width: 2; }
 .tree-node--focused text { fill: #fff; font-weight: 600; }
+.tree-node--inherited circle { fill-opacity: 0.55; }
 
 .tooltip-status {
   display: inline-block;
@@ -374,6 +388,8 @@ tbody td {
 
 .detail-label-hint { color: var(--text-dim); font-weight: normal; font-size: 0.7rem; }
 .detail-status { display: flex; gap: 0.4rem; }
+.detail-status-inherited { font-size: 0.72rem; color: var(--text-dim); font-style: italic; }
+.detail-status-inherited.hidden { display: none; }
 .status-btn {
   flex: 1;
   font-size: 0.72rem;

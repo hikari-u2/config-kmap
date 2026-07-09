@@ -41,6 +41,7 @@ function createGraph(container) {
   let hasAnnotationFn = null;
   let groupsForNodeFn = null; // (key) => [{ id, color, name }, ...]
   let infoForNodeFn = null;   // (key) => { value, description, tags: [] }
+  let statusForKeyFn = null;  // (key) => { status: 'useful'|'useless'|'', inherited: bool }
   let hoveredKey = null;
   // adjacency for hover highlighting: key -> Set of related keys (parent/children + group siblings)
   let adjacency = new Map();
@@ -254,6 +255,19 @@ function createGraph(container) {
     }
   }
 
+  function statusColor(status) {
+    if (status === 'useful') return '#6fcf97';
+    if (status === 'useless') return '#eb5757';
+    return '#9aa1ad';
+  }
+
+  function statusOf(key) {
+    const eff = statusForKeyFn ? statusForKeyFn(key) : null;
+    if (!eff) return { status: '', inherited: false };
+    const s = eff.status === 'useful' || eff.status === 'useless' ? eff.status : '';
+    return { status: s, inherited: Boolean(s && eff.inherited) };
+  }
+
   function render() {
     while (edgesGroup.firstChild) edgesGroup.removeChild(edgesGroup.firstChild);
     while (nodesGroup.firstChild) nodesGroup.removeChild(nodesGroup.firstChild);
@@ -301,6 +315,16 @@ function createGraph(container) {
       const radius = n.isLeaf ? 6 : 10;
       const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
       circle.setAttribute('r', radius);
+      // Status coloring: leaves are always tinted by their (effective) status,
+      // sections keep the default section color until a status is set.
+      // Inline style so it wins over the stylesheet's class-based fill.
+      const eff = statusOf(n.id);
+      if (n.isLeaf) {
+        circle.style.fill = statusColor(eff.status);
+      } else if (eff.status) {
+        circle.style.fill = statusColor(eff.status);
+      }
+      if (eff.inherited) g.classList.add('graph-node--inherited');
       g.appendChild(circle);
 
       const memberGroups = groupsForNodeFn ? groupsForNodeFn(n.id) : [];
@@ -382,6 +406,12 @@ function createGraph(container) {
     if (n.isLeaf) html += `<div class="tooltip-value">${escapeHtml(n.value)}</div>`;
     if (info && info.description) html += `<div class="tooltip-desc">${escapeHtml(info.description)}</div>`;
     if (info && info.tags && info.tags.length) html += `<div class="tooltip-tags">${info.tags.map(escapeHtml).join(', ')}</div>`;
+    const eff = statusOf(n.id);
+    if (n.isLeaf || eff.status) {
+      const base = eff.status === 'useful' ? 'Useful' : eff.status === 'useless' ? 'Not interested' : 'Unset';
+      const statusLabel = eff.inherited ? `${base} (inherited)` : base;
+      html += `<div class="tooltip-status tooltip-status--${eff.status || 'unset'}">${statusLabel}</div>`;
+    }
     if (groupsList.length) {
       html += `<div class="tooltip-groups">${groupsList.map((g) => `<span class="tooltip-group-chip" style="background:${g.color}">${escapeHtml(g.name)}</span>`).join(' ')}</div>`;
     }
@@ -437,6 +467,8 @@ function createGraph(container) {
     setAnnotationChecker(fn) { hasAnnotationFn = fn; },
     setGroupsChecker(fn) { groupsForNodeFn = fn; render(); },
     setInfoProvider(fn) { infoForNodeFn = fn; },
+    setStatusProvider(fn) { statusForKeyFn = fn; },
+    refresh() { render(); },
     resetView() { viewX = 0; viewY = 0; viewScale = 1; applyViewBox(); },
     fitToView,
   };

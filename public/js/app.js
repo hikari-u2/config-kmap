@@ -35,6 +35,7 @@
     detailDescription: document.getElementById('detail-description'),
     detailTags: document.getElementById('detail-tags'),
     detailStatus: document.getElementById('detail-status'),
+    detailStatusInherited: document.getElementById('detail-status-inherited'),
     saveAnnotationBtn: document.getElementById('save-annotation-btn'),
     status: document.getElementById('status-bar'),
     currentFileLabel: document.getElementById('current-file-label'),
@@ -64,6 +65,7 @@
       tags: ann ? ann.tags : [],
     };
   });
+  graph.setStatusProvider((key) => effectiveStatusForKey(key));
 
   const tree = window.KMapTree.createTree(el.treeView);
   tree.onNodeClick(async (key, isLeaf, value) => {
@@ -80,11 +82,27 @@
       tags: ann ? ann.tags : [],
     };
   });
-  tree.setStatusProvider((key) => statusForKey(key));
+  tree.setStatusProvider((key) => effectiveStatusForKey(key));
 
   function statusForKey(key) {
     const ann = state.annotations[key];
     return ann && ann.status ? ann.status : '';
+  }
+
+  /**
+   * Effective status for a node: its own status if set, otherwise the
+   * nearest ancestor's status (marking a section cascades to all subnodes
+   * until one of them sets its own status explicitly).
+   */
+  function effectiveStatusForKey(key) {
+    const own = statusForKey(key);
+    if (own) return { status: own, inherited: false };
+    const parts = key.split('.');
+    for (let i = parts.length - 1; i >= 1; i--) {
+      const s = statusForKey(parts.slice(0, i).join('.'));
+      if (s) return { status: s, inherited: true };
+    }
+    return { status: '', inherited: false };
   }
 
   function groupsForKey(key) {
@@ -200,6 +218,18 @@
       valueTd.className = 'cell-value';
       valueTd.textContent = entry.value;
 
+      const statusTd = document.createElement('td');
+      statusTd.className = 'cell-status';
+      const eff = effectiveStatusForKey(entry.key);
+      if (eff.status) {
+        const badge = document.createElement('span');
+        badge.className =
+          `status-badge status-badge--${eff.status}` + (eff.inherited ? ' status-badge--inherited' : '');
+        badge.textContent = eff.status === 'useful' ? 'Useful' : 'Not interested';
+        if (eff.inherited) badge.title = 'Inherited from a parent section';
+        statusTd.appendChild(badge);
+      }
+
       const descTd = document.createElement('td');
       descTd.className = 'cell-description';
       const ann = state.annotations[entry.key];
@@ -224,6 +254,7 @@
 
       tr.appendChild(keyTd);
       tr.appendChild(valueTd);
+      tr.appendChild(statusTd);
       tr.appendChild(descTd);
       tr.appendChild(tagsTd);
       tr.appendChild(groupsTd);
@@ -261,7 +292,10 @@
     };
 
     addRow('<span class="graph-legend-swatch" style="background:#f2c94c"></span> Section (parent key)');
-    addRow('<span class="graph-legend-swatch" style="background:#6fcf97"></span> Field (leaf key)');
+    addRow('<span class="graph-legend-swatch" style="background:#6fcf97"></span> Useful');
+    addRow('<span class="graph-legend-swatch" style="background:#eb5757"></span> Not interested');
+    addRow('<span class="graph-legend-swatch" style="background:#9aa1ad"></span> Field, status unset');
+    addRow('<span class="graph-legend-swatch" style="background:#6fcf97;opacity:0.5"></span> Inherited from parent');
     addRow('<span class="graph-legend-swatch" style="background:transparent;border:2px solid #5aa9e6;box-sizing:border-box"></span> Has description');
 
     if (state.groups.groups.length > 0) {
@@ -283,6 +317,7 @@
     el.detailTags.value = (ann.tags || []).join(', ');
     state.pendingStatus = ann.status || '';
     updateStatusButtons();
+    updateInheritedNote(key);
 
     renderDetailGroups(key);
   }
@@ -300,8 +335,25 @@
     const ann = await window.Annotations.getAnnotation(state.activeKey);
     await window.Annotations.setAnnotation(state.activeKey, { ...ann, status });
     state.annotations = await window.Annotations.loadAnnotations();
+    updateInheritedNote(state.activeKey);
+    renderTable();
     renderTree();
-    setStatus(`Marked "${state.activeKey}" as ${status || 'unset'}`);
+    graph.refresh();
+    setStatus(
+      `Marked "${state.activeKey}" as ${status || 'unset'} — subnodes without their own status inherit it.`
+    );
+  }
+
+  function updateInheritedNote(key) {
+    const own = statusForKey(key);
+    const eff = effectiveStatusForKey(key);
+    if (!own && eff.inherited) {
+      const label = eff.status === 'useful' ? 'Useful' : 'Not interested';
+      el.detailStatusInherited.textContent = `Inheriting "${label}" from a parent section.`;
+      el.detailStatusInherited.classList.remove('hidden');
+    } else {
+      el.detailStatusInherited.classList.add('hidden');
+    }
   }
 
   function renderDetailGroups(key) {
