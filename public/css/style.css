@@ -113,6 +113,14 @@ button {
 }
 button:hover { background: var(--accent); color: #08131c; }
 button.active { background: var(--accent); color: #08131c; }
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+button:disabled:hover {
+  background: var(--accent-dim);
+  color: var(--text);
+}
 
 .groups-bar {
   display: flex;
@@ -177,6 +185,27 @@ button.active { background: var(--accent); color: #08131c; }
   overflow: hidden;
   position: relative;
 }
+.focus-mode-banner {
+  position: absolute;
+  top: 16px;
+  left: 18px;
+  z-index: 7;
+  padding: 0.25rem 0.55rem;
+  border: 1px solid #d8b93e;
+  border-radius: 4px;
+  background: rgba(242, 212, 107, 0.95);
+  color: #15130a;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  pointer-events: none;
+}
+.focus-mode-banner.hidden { display: none; }
+.focus-viewport-active {
+  outline: 2px solid var(--section);
+  outline-offset: -8px;
+  box-shadow: inset 0 0 0 1px rgba(242, 201, 76, 0.24);
+}
 
 .table-view {
   flex: 1;
@@ -206,6 +235,13 @@ th:nth-child(5), td:nth-child(5) { width: 13%; }
 th:nth-child(6), td:nth-child(6) { width: 9%; }
 tbody tr { cursor: pointer; }
 tbody tr:hover { background: var(--panel-alt); }
+tbody tr.row--focus-dimmed {
+  opacity: 0.38;
+  filter: grayscale(0.7);
+}
+tbody tr.row--focus-dimmed:hover {
+  opacity: 0.72;
+}
 tbody td {
   padding: 0.4rem 0.6rem;
   border-bottom: 1px solid var(--border);
@@ -246,6 +282,7 @@ tbody td {
 .graph-edge { stroke: var(--border); stroke-width: 1; transition: opacity 0.1s; }
 .graph-edge--group { stroke-width: 2; stroke-dasharray: 4 3; opacity: 0.85; }
 .graph-edge--dimmed { opacity: 0.08; }
+.graph-edge--focus-dimmed { opacity: 0.12; stroke: #555b66; }
 .graph-edge--focused { opacity: 1; stroke-width: 2; }
 .graph-node circle { fill: var(--section); stroke: #0009; stroke-width: 1; }
 .graph-node--leaf circle { fill: var(--leaf); }
@@ -253,6 +290,8 @@ tbody td {
 .graph-node text { fill: var(--text); font-size: 11px; pointer-events: none; font-family: "SF Mono", Consolas, monospace; }
 .graph-node { cursor: pointer; }
 .graph-node--dimmed { opacity: 0.15; }
+.graph-node--focus-dimmed { opacity: 0.28; filter: grayscale(0.8); }
+.graph-node--focus-dimmed.graph-node--focused { opacity: 0.82; }
 .graph-node--focused circle { stroke: #fff; stroke-width: 2; }
 .graph-node--focused text { fill: #fff; font-weight: 600; }
 .graph-node--inherited circle { fill-opacity: 0.55; }
@@ -333,6 +372,7 @@ tbody td {
 .tree-edge--useless { stroke: var(--error); opacity: 0.7; }
 .tree-edge--unset { stroke: var(--text-dim); opacity: 0.45; }
 .tree-edge--dimmed { opacity: 0.06; }
+.tree-edge--focus-dimmed { opacity: 0.12; stroke: #555b66; }
 .tree-edge--focused { opacity: 1; stroke-width: 2.2; }
 
 .tree-node circle { fill: var(--section); stroke: #0009; stroke-width: 1; }
@@ -341,9 +381,52 @@ tbody td {
 .tree-node text { fill: var(--text); font-size: 11px; pointer-events: none; font-family: "SF Mono", Consolas, monospace; }
 .tree-node { cursor: pointer; }
 .tree-node--dimmed { opacity: 0.15; }
+.tree-node--focus-dimmed { opacity: 0.28; filter: grayscale(0.8); }
+.tree-node--focus-dimmed.tree-node--focused { opacity: 0.82; }
 .tree-node--focused circle { stroke: #fff; stroke-width: 2; }
 .tree-node--focused text { fill: #fff; font-weight: 600; }
 .tree-node--inherited circle { fill-opacity: 0.55; }
+
+#tree-callout-arrowhead path { fill: #d8b93e; }
+.tree-callout-arrow {
+  fill: none;
+  stroke: #d8b93e;
+  stroke-width: 1.8;
+  stroke-dasharray: 5 4;
+  opacity: 0.82;
+}
+.tree-callout-note {
+  cursor: pointer;
+  transition: opacity 0.1s;
+}
+.tree-callout-note rect {
+  fill: #f2d46b;
+  stroke: #d8b93e;
+  stroke-width: 1;
+  filter: drop-shadow(0 3px 7px rgba(0, 0, 0, 0.35));
+}
+.tree-callout-note text {
+  fill: #15130a;
+  font-size: 11px;
+  pointer-events: none;
+}
+.tree-callout-key {
+  fill: #5d4c08 !important;
+  font-size: 9px !important;
+  font-family: "SF Mono", Consolas, monospace;
+}
+.tree-callout-note--focused rect {
+  stroke: #fff2a8;
+  stroke-width: 2;
+}
+.tree-callout-note--dimmed,
+.tree-callout-arrow--dimmed {
+  opacity: 0.22;
+}
+.tree-callout-arrow--focused {
+  opacity: 1;
+  stroke-width: 2.4;
+}
 
 .tooltip-status {
   display: inline-block;
@@ -385,6 +468,27 @@ tbody td {
   border-radius: 4px;
 }
 #detail-description, #detail-tags { width: 100%; resize: vertical; }
+.detail-description-visibility {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+.detail-description-visibility.hidden { display: none; }
+.detail-readonly-note {
+  color: var(--section);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+.detail-readonly-note.hidden { display: none; }
+.detail-panel.detail-panel--readonly input,
+.detail-panel.detail-panel--readonly textarea {
+  opacity: 0.72;
+}
+.detail-panel.detail-panel--readonly button:disabled,
+.detail-panel.detail-panel--readonly input:disabled,
+.detail-panel.detail-panel--readonly textarea:disabled {
+  cursor: not-allowed;
+}
 
 .detail-label-hint { color: var(--text-dim); font-weight: normal; font-size: 0.7rem; }
 .detail-status { display: flex; gap: 0.4rem; }

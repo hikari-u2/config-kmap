@@ -26,12 +26,30 @@ function createTree(container) {
   svg.setAttribute('class', 'tree-svg');
   container.appendChild(svg);
 
+  const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+  const arrowMarker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+  arrowMarker.setAttribute('id', 'tree-callout-arrowhead');
+  arrowMarker.setAttribute('viewBox', '0 0 10 10');
+  arrowMarker.setAttribute('refX', '9');
+  arrowMarker.setAttribute('refY', '5');
+  arrowMarker.setAttribute('markerWidth', '6');
+  arrowMarker.setAttribute('markerHeight', '6');
+  arrowMarker.setAttribute('orient', 'auto-start-reverse');
+  const arrowHead = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  arrowHead.setAttribute('d', 'M 0 0 L 10 5 L 0 10 z');
+  arrowMarker.appendChild(arrowHead);
+  defs.appendChild(arrowMarker);
+
   const edgesGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
   edgesGroup.setAttribute('class', 'edges');
   const nodesGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
   nodesGroup.setAttribute('class', 'nodes');
+  const calloutsGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  calloutsGroup.setAttribute('class', 'tree-callouts');
+  svg.appendChild(defs);
   svg.appendChild(edgesGroup);
   svg.appendChild(nodesGroup);
+  svg.appendChild(calloutsGroup);
 
   const tooltip = document.createElement('div');
   tooltip.className = 'graph-tooltip hidden';
@@ -48,8 +66,10 @@ function createTree(container) {
   let groupsForNodeFn = null;
   let infoForNodeFn = null;
   let statusForKeyFn = null; // (key) => { status: 'useful'|'useless'|'', inherited: bool }
+  let focusUseful = false;
   let hoveredKey = null;
   let adjacency = new Map();
+  let calloutBounds = [];
 
   // Pan/zoom state
   let viewX = 0, viewY = 0, viewScale = 1;
@@ -200,9 +220,44 @@ function createTree(container) {
     return '#9aa1ad';
   }
 
+  function displayStatusColor(status) {
+    if (focusUseful && status === 'useless') return '#555b66';
+    return statusColor(status);
+  }
+
+  function wrapCalloutText(text, maxChars, maxLines) {
+    const words = String(text || '').trim().split(/\s+/).filter(Boolean);
+    const lines = [];
+    let line = '';
+
+    for (const word of words) {
+      const next = line ? `${line} ${word}` : word;
+      if (next.length <= maxChars) {
+        line = next;
+        continue;
+      }
+      if (line) lines.push(line);
+      line = word.length > maxChars ? `${word.slice(0, maxChars - 1)}\u2026` : word;
+      if (lines.length === maxLines) break;
+    }
+    if (line && lines.length < maxLines) lines.push(line);
+
+    if (lines.length === maxLines) {
+      const full = words.join(' ');
+      const rendered = lines.join(' ');
+      if (full.length > rendered.length) {
+        lines[maxLines - 1] = truncateTreeLabel(lines[maxLines - 1], maxChars);
+      }
+    }
+
+    return lines.length ? lines : [''];
+  }
+
   function render() {
     while (edgesGroup.firstChild) edgesGroup.removeChild(edgesGroup.firstChild);
     while (nodesGroup.firstChild) nodesGroup.removeChild(nodesGroup.firstChild);
+    while (calloutsGroup.firstChild) calloutsGroup.removeChild(calloutsGroup.firstChild);
+    calloutBounds = [];
 
     const idToNode = new Map(layoutNodes.map((n) => [n.id, n]));
 
@@ -222,6 +277,9 @@ function createTree(container) {
         : `M ${source.x} ${source.y} L ${target.x} ${midY} L ${target.x} ${target.y}`;
       path.setAttribute('d', d);
       path.setAttribute('class', target.isLeaf ? `tree-edge tree-edge--${target.status || 'unset'}` : 'tree-edge tree-edge--trunk');
+      if (focusUseful && (source.status === 'useless' || target.status === 'useless')) {
+        path.classList.add('tree-edge--focus-dimmed');
+      }
       path.dataset.source = edge.source;
       path.dataset.target = edge.target;
       edgesGroup.appendChild(path);
@@ -243,10 +301,11 @@ function createTree(container) {
       circle.setAttribute('r', radius);
       // Inline style so it wins over the stylesheet's class-based fill
       // (a fill *attribute* would be overridden by `.tree-node circle`).
+      if (focusUseful && n.status === 'useless') g.classList.add('tree-node--focus-dimmed');
       if (n.isLeaf) {
-        circle.style.fill = statusColor(n.status);
+        circle.style.fill = displayStatusColor(n.status);
       } else if (n.status) {
-        circle.style.fill = statusColor(n.status);
+        circle.style.fill = displayStatusColor(n.status);
       }
       if (n.statusInherited) g.classList.add('tree-node--inherited');
       g.appendChild(circle);
@@ -332,7 +391,94 @@ function createTree(container) {
       g.insertBefore(hitArea, g.firstChild);
     }
 
+    renderFocusCallouts();
     updateHoverHighlight();
+  }
+
+  function renderFocusCallouts() {
+    if (!focusUseful || !infoForNodeFn) return;
+
+    const describedNodes = layoutNodes
+      .filter((n) => n.id !== '__root__' && n.status === 'useful')
+      .map((n) => ({ node: n, info: infoForNodeFn(n.id) || {} }))
+      .filter(({ info }) => info.description);
+
+    if (describedNodes.length === 0) return;
+
+    const maxNodeX = layoutNodes
+      .filter((n) => n.id !== '__root__')
+      .reduce((max, n) => Math.max(max, n.x), 0);
+    const noteWidth = 230;
+    const lineHeight = 13;
+    const padX = 10;
+    const padY = 8;
+    const minNoteHeight = 42;
+    const noteGap = 10;
+    const noteX = Math.max(maxNodeX + 150, width / 2 + 360);
+    let lastNoteBottom = -Infinity;
+
+    for (const { node, info } of describedNodes) {
+      const lines = wrapCalloutText(info.description, 34, 4);
+      const noteHeight = Math.max(minNoteHeight, padY * 2 + lines.length * lineHeight + 14);
+      let noteY = node.y - noteHeight / 2;
+      if (noteY < lastNoteBottom + noteGap) noteY = lastNoteBottom + noteGap;
+      lastNoteBottom = noteY + noteHeight;
+
+      const sourceX = node.x + (node.isLeaf ? 8 : 11);
+      const sourceY = node.y;
+      const targetX = noteX;
+      const targetY = noteY + noteHeight / 2;
+
+      const connector = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      const midX = sourceX + (targetX - sourceX) * 0.55;
+      connector.setAttribute('d', `M ${sourceX} ${sourceY} C ${midX} ${sourceY}, ${midX} ${targetY}, ${targetX - 8} ${targetY}`);
+      connector.setAttribute('class', 'tree-callout-arrow');
+      connector.setAttribute('marker-end', 'url(#tree-callout-arrowhead)');
+      connector.dataset.source = node.id;
+      connector.dataset.target = `${node.id}::note`;
+      calloutsGroup.appendChild(connector);
+
+      const note = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      note.setAttribute('class', 'tree-callout-note');
+      note.setAttribute('transform', `translate(${noteX}, ${noteY})`);
+      note.dataset.key = node.id;
+      note.addEventListener('click', () => {
+        if (onNodeClick) onNodeClick(node.id, node.isLeaf, node.value);
+      });
+
+      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      rect.setAttribute('width', noteWidth);
+      rect.setAttribute('height', noteHeight);
+      rect.setAttribute('rx', 6);
+      note.appendChild(rect);
+
+      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      label.setAttribute('x', padX);
+      label.setAttribute('y', padY + 10);
+      for (const [i, line] of lines.entries()) {
+        const tspan = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+        tspan.setAttribute('x', padX);
+        tspan.setAttribute('dy', i === 0 ? 0 : lineHeight);
+        tspan.textContent = line;
+        label.appendChild(tspan);
+      }
+      note.appendChild(label);
+
+      const key = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      key.setAttribute('class', 'tree-callout-key');
+      key.setAttribute('x', padX);
+      key.setAttribute('y', noteHeight - 7);
+      key.textContent = truncateTreeLabel(node.id, 34);
+      note.appendChild(key);
+
+      calloutsGroup.appendChild(note);
+      calloutBounds.push({
+        minX: Math.min(sourceX, noteX),
+        minY: Math.min(sourceY, noteY),
+        maxX: noteX + noteWidth,
+        maxY: noteY + noteHeight,
+      });
+    }
   }
 
   /**
@@ -356,6 +502,17 @@ function createTree(container) {
       const related = a === hoveredKey || b === hoveredKey;
       pathEl.classList.toggle('tree-edge--focused', related);
       pathEl.classList.toggle('tree-edge--dimmed', !related);
+    }
+    for (const noteEl of calloutsGroup.querySelectorAll('.tree-callout-note')) {
+      const key = noteEl.dataset.key;
+      noteEl.classList.remove('tree-callout-note--focused', 'tree-callout-note--dimmed');
+      if (hoveredKey) noteEl.classList.add(hoveredKey === key ? 'tree-callout-note--focused' : 'tree-callout-note--dimmed');
+    }
+    for (const arrowEl of calloutsGroup.querySelectorAll('.tree-callout-arrow')) {
+      if (!hoveredKey) { arrowEl.classList.remove('tree-callout-arrow--dimmed', 'tree-callout-arrow--focused'); continue; }
+      const related = arrowEl.dataset.source === hoveredKey;
+      arrowEl.classList.toggle('tree-callout-arrow--focused', related);
+      arrowEl.classList.toggle('tree-callout-arrow--dimmed', !related);
     }
   }
 
@@ -404,6 +561,12 @@ function createTree(container) {
       maxX = Math.max(maxX, n.x);
       maxY = Math.max(maxY, n.y);
     }
+    for (const b of calloutBounds) {
+      minX = Math.min(minX, b.minX);
+      minY = Math.min(minY, b.minY);
+      maxX = Math.max(maxX, b.maxX);
+      maxY = Math.max(maxY, b.maxY);
+    }
     const pad = 80;
     minX -= pad; minY -= pad; maxX += pad; maxY += pad;
     const boxW = Math.max(maxX - minX, 50);
@@ -422,6 +585,7 @@ function createTree(container) {
     setGroupsChecker(fn) { groupsForNodeFn = fn; render(); },
     setInfoProvider(fn) { infoForNodeFn = fn; },
     setStatusProvider(fn) { statusForKeyFn = fn; },
+    setFocusUseful(enabled) { focusUseful = Boolean(enabled); render(); },
     resetView() { viewX = 0; viewY = 0; viewScale = 1; applyViewBox(); },
     fitToView,
   };

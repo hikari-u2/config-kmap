@@ -11,6 +11,7 @@
     groups: { groups: [] },
     activeKey: null,
     groupFilter: '', // group id, or '' for all
+    focusUseful: false,
     view: 'table', // 'table' | 'graph' | 'tree'
     pendingStatus: '', // status selected in detail panel before save (also applied immediately)
   };
@@ -22,6 +23,8 @@
     loadSelectedBtn: document.getElementById('load-selected-btn'),
     fileUpload: document.getElementById('file-upload'),
     searchInput: document.getElementById('search-input'),
+    mainLayout: document.querySelector('.main-layout'),
+    focusModeBanner: document.getElementById('focus-mode-banner'),
     tableBody: document.getElementById('table-body'),
     tableView: document.getElementById('table-view'),
     graphView: document.getElementById('graph-view'),
@@ -29,10 +32,13 @@
     viewTableBtn: document.getElementById('view-table-btn'),
     viewGraphBtn: document.getElementById('view-graph-btn'),
     viewTreeBtn: document.getElementById('view-tree-btn'),
+    focusUsefulBtn: document.getElementById('focus-useful-btn'),
     detailPanel: document.getElementById('detail-panel'),
     detailKey: document.getElementById('detail-key'),
     detailValue: document.getElementById('detail-value'),
     detailDescription: document.getElementById('detail-description'),
+    detailDescriptionVisibility: document.getElementById('detail-description-visibility'),
+    detailReadonlyNote: document.getElementById('detail-readonly-note'),
     detailTags: document.getElementById('detail-tags'),
     detailStatus: document.getElementById('detail-status'),
     detailStatusInherited: document.getElementById('detail-status-inherited'),
@@ -54,14 +60,14 @@
   graph.onNodeClick(async (key, isLeaf, value) => {
     await showDetail(key, isLeaf, value);
   });
-  graph.setAnnotationChecker((key) => Boolean(state.annotations[key] && state.annotations[key].description));
+  graph.setAnnotationChecker((key) => hasUsefulDescription(key));
   graph.setGroupsChecker((key) => groupsForKey(key));
   graph.setInfoProvider((key) => {
     const entry = state.entries.find((e) => e.key === key);
     const ann = state.annotations[key];
     return {
       value: entry ? entry.value : '',
-      description: ann ? ann.description : '',
+      description: visibleDescriptionForKey(key),
       tags: ann ? ann.tags : [],
     };
   });
@@ -71,14 +77,14 @@
   tree.onNodeClick(async (key, isLeaf, value) => {
     await showDetail(key, isLeaf, value);
   });
-  tree.setAnnotationChecker((key) => Boolean(state.annotations[key] && state.annotations[key].description));
+  tree.setAnnotationChecker((key) => hasUsefulDescription(key));
   tree.setGroupsChecker((key) => groupsForKey(key));
   tree.setInfoProvider((key) => {
     const entry = state.entries.find((e) => e.key === key);
     const ann = state.annotations[key];
     return {
       value: entry ? entry.value : '',
-      description: ann ? ann.description : '',
+      description: visibleDescriptionForKey(key),
       tags: ann ? ann.tags : [],
     };
   });
@@ -103,6 +109,23 @@
       if (s) return { status: s, inherited: true };
     }
     return { status: '', inherited: false };
+  }
+
+  function isEffectivelyUseful(key) {
+    return effectiveStatusForKey(key).status === 'useful';
+  }
+
+  function isEffectivelyUseless(key) {
+    return effectiveStatusForKey(key).status === 'useless';
+  }
+
+  function hasUsefulDescription(key) {
+    const ann = state.annotations[key];
+    return Boolean(ann && ann.description && isEffectivelyUseful(key));
+  }
+
+  function visibleDescriptionForKey(key) {
+    return hasUsefulDescription(key) ? state.annotations[key].description : '';
   }
 
   function groupsForKey(key) {
@@ -189,7 +212,7 @@
       const textMatch =
         key.toLowerCase().includes(f) ||
         value.toLowerCase().includes(f) ||
-        (ann && ann.description && ann.description.toLowerCase().includes(f)) ||
+        (hasUsefulDescription(key) && ann.description.toLowerCase().includes(f)) ||
         (ann && ann.tags && ann.tags.some((t) => t.toLowerCase().includes(f)));
       if (!textMatch) return false;
     }
@@ -209,6 +232,7 @@
 
       const tr = document.createElement('tr');
       tr.dataset.key = entry.key;
+      tr.classList.toggle('row--focus-dimmed', state.focusUseful && isEffectivelyUseless(entry.key));
 
       const keyTd = document.createElement('td');
       keyTd.className = 'cell-key';
@@ -233,7 +257,7 @@
       const descTd = document.createElement('td');
       descTd.className = 'cell-description';
       const ann = state.annotations[entry.key];
-      descTd.textContent = ann && ann.description ? ann.description : '';
+      descTd.textContent = visibleDescriptionForKey(entry.key);
       if (!descTd.textContent) descTd.classList.add('cell-description--empty');
 
       const tagsTd = document.createElement('td');
@@ -270,6 +294,7 @@
     const { nodes, edges } = window.PrefParser.flattenTree(state.tree);
     graph.setData(nodes, edges);
     graph.setGroups(state.groups.groups);
+    graph.setFocusUseful(state.focusUseful);
     renderGraphLegend();
     // Give the force layout a moment to spread out before framing it.
     setTimeout(() => graph.fitToView(), 400);
@@ -278,6 +303,7 @@
   function renderTree(resetView) {
     if (!state.tree) return;
     tree.setData(state.tree);
+    tree.setFocusUseful(state.focusUseful);
     // Only snap the viewport to fit the whole tree on the initial load of
     // a file. Re-rendering after a status change (setStatusForActiveKey
     // calls this to recolor nodes) should leave pan/zoom exactly where
@@ -302,7 +328,10 @@
     addRow('<span class="graph-legend-swatch" style="background:#eb5757"></span> Not interested');
     addRow('<span class="graph-legend-swatch" style="background:#9aa1ad"></span> Field, status unset');
     addRow('<span class="graph-legend-swatch" style="background:#6fcf97;opacity:0.5"></span> Inherited from parent');
-    addRow('<span class="graph-legend-swatch" style="background:transparent;border:2px solid #5aa9e6;box-sizing:border-box"></span> Has description');
+    addRow('<span class="graph-legend-swatch" style="background:transparent;border:2px solid #5aa9e6;box-sizing:border-box"></span> Useful description');
+    if (state.focusUseful) {
+      addRow('<span class="graph-legend-swatch" style="background:#555b66"></span> Dimmed: not interested');
+    }
 
     if (state.groups.groups.length > 0) {
       addRow('<span class="graph-legend-line"></span> Custom group link');
@@ -324,8 +353,10 @@
     state.pendingStatus = ann.status || '';
     updateStatusButtons();
     updateInheritedNote(key);
+    updateDescriptionVisibilityNote(key);
 
     renderDetailGroups(key);
+    applyFocusModeUi();
   }
 
   function updateStatusButtons() {
@@ -336,15 +367,21 @@
 
   async function setStatusForActiveKey(status) {
     if (!state.activeKey) return;
+    if (state.focusUseful) {
+      setStatus('Editing is disabled while Focus useful is active.', true);
+      return;
+    }
     state.pendingStatus = status;
     updateStatusButtons();
     const ann = await window.Annotations.getAnnotation(state.activeKey);
     await window.Annotations.setAnnotation(state.activeKey, { ...ann, status });
     state.annotations = await window.Annotations.loadAnnotations();
     updateInheritedNote(state.activeKey);
+    updateDescriptionVisibilityNote(state.activeKey);
     renderTable();
     renderTree();
     graph.refresh();
+    updateAnnotatedCount();
     setStatus(
       `Marked "${state.activeKey}" as ${status || 'unset'} — subnodes without their own status inherit it.`
     );
@@ -359,6 +396,19 @@
       el.detailStatusInherited.classList.remove('hidden');
     } else {
       el.detailStatusInherited.classList.add('hidden');
+    }
+  }
+
+  function updateDescriptionVisibilityNote(key) {
+    const ann = state.annotations[key] || {};
+    const hasDescription = Boolean(ann.description);
+    const hiddenByStatus = hasDescription && !isEffectivelyUseful(key);
+    if (hiddenByStatus) {
+      el.detailDescriptionVisibility.textContent =
+        'Hidden in table, search, graph, and tree until this key is Useful.';
+      el.detailDescriptionVisibility.classList.remove('hidden');
+    } else {
+      el.detailDescriptionVisibility.classList.add('hidden');
     }
   }
 
@@ -378,6 +428,7 @@
       const checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
       checkbox.checked = g.keys.includes(key);
+      checkbox.disabled = state.focusUseful;
       checkbox.addEventListener('change', () => toggleKeyInGroup(key, g.id, checkbox.checked));
 
       const swatch = document.createElement('span');
@@ -395,6 +446,11 @@
   }
 
   async function toggleKeyInGroup(key, groupId, checked) {
+    if (state.focusUseful) {
+      setStatus('Editing is disabled while Focus useful is active.', true);
+      renderDetailGroups(key);
+      return;
+    }
     const current = groupsForKey(key).map((g) => g.id);
     const next = checked ? [...new Set([...current, groupId])] : current.filter((id) => id !== groupId);
     state.groups = await window.Groups.setKeyGroups(key, next);
@@ -407,6 +463,10 @@
 
   async function saveCurrentAnnotation() {
     if (!state.activeKey) return;
+    if (state.focusUseful) {
+      setStatus('Editing is disabled while Focus useful is active.', true);
+      return;
+    }
     const description = el.detailDescription.value.trim();
     const tags = el.detailTags.value
       .split(',')
@@ -416,6 +476,7 @@
     await window.Annotations.setAnnotation(state.activeKey, { description, tags, status: state.pendingStatus });
     state.annotations = await window.Annotations.loadAnnotations();
     setStatus(`Saved annotation for "${state.activeKey}"`);
+    updateDescriptionVisibilityNote(state.activeKey);
     renderTable();
     renderGraph();
     renderTree();
@@ -424,10 +485,8 @@
 
   function updateAnnotatedCount() {
     const total = state.entries.length;
-    const annotated = state.entries.filter(
-      (e) => state.annotations[e.key] && state.annotations[e.key].description
-    ).length;
-    el.annotatedCount.textContent = `${annotated} / ${total} annotated`;
+    const annotated = state.entries.filter((e) => hasUsefulDescription(e.key)).length;
+    el.annotatedCount.textContent = `${annotated} / ${total} useful descriptions`;
   }
 
   function renderGroupsBar() {
@@ -480,6 +539,10 @@
   }
 
   async function addNewGroup() {
+    if (state.focusUseful) {
+      setStatus('Editing is disabled while Focus useful is active.', true);
+      return;
+    }
     const name = el.newGroupName.value.trim();
     if (!name) {
       setStatus('Enter a group name first.', true);
@@ -501,7 +564,47 @@
     el.viewGraphBtn.classList.toggle('active', view === 'graph');
     el.viewTreeBtn.classList.toggle('active', view === 'tree');
     if (view === 'graph') graph.resize();
-    if (view === 'tree') { tree.resize(); renderTree(); }
+    if (view === 'tree') {
+      tree.resize();
+      renderTree();
+      if (state.focusUseful) setTimeout(() => tree.fitToView(), 0);
+    }
+    applyFocusModeUi();
+  }
+
+  function toggleFocusUseful() {
+    state.focusUseful = !state.focusUseful;
+    el.focusUsefulBtn.classList.toggle('active', state.focusUseful);
+    el.focusUsefulBtn.setAttribute('aria-pressed', String(state.focusUseful));
+    applyFocusModeUi();
+    renderTable();
+    graph.setFocusUseful(state.focusUseful);
+    tree.setFocusUseful(state.focusUseful);
+    renderGraphLegend();
+    if (state.focusUseful && state.view === 'tree') setTimeout(() => tree.fitToView(), 0);
+    setStatus(state.focusUseful ? 'Focusing Useful keys. Not interested keys are dimmed.' : 'Showing all keys at normal emphasis.');
+  }
+
+  function applyFocusModeUi() {
+    el.mainLayout.classList.toggle('focus-mode-active', state.focusUseful);
+    el.focusModeBanner.classList.toggle('hidden', !state.focusUseful);
+    for (const viewEl of [el.tableView, el.graphView, el.treeView]) {
+      viewEl.classList.toggle('focus-viewport-active', state.focusUseful && !viewEl.classList.contains('hidden'));
+    }
+
+    el.detailPanel.classList.toggle('detail-panel--readonly', state.focusUseful);
+    el.detailReadonlyNote.classList.toggle('hidden', !state.focusUseful);
+    el.detailDescription.disabled = state.focusUseful;
+    el.detailTags.disabled = state.focusUseful;
+    el.saveAnnotationBtn.disabled = state.focusUseful;
+    el.newGroupName.disabled = state.focusUseful;
+    el.newGroupBtn.disabled = state.focusUseful;
+    for (const btn of el.detailStatus.querySelectorAll('.status-btn')) {
+      btn.disabled = state.focusUseful;
+    }
+    for (const checkbox of el.detailGroups.querySelectorAll('input[type="checkbox"]')) {
+      checkbox.disabled = state.focusUseful;
+    }
   }
 
   el.scanBtn.addEventListener('click', scanFolder);
@@ -512,6 +615,7 @@
   el.viewTableBtn.addEventListener('click', () => switchView('table'));
   el.viewGraphBtn.addEventListener('click', () => switchView('graph'));
   el.viewTreeBtn.addEventListener('click', () => switchView('tree'));
+  el.focusUsefulBtn.addEventListener('click', toggleFocusUseful);
   el.newGroupBtn.addEventListener('click', addNewGroup);
   el.fitViewBtn.addEventListener('click', () => graph.fitToView());
   el.treeFitViewBtn.addEventListener('click', () => tree.fitToView());
@@ -529,6 +633,7 @@
     state.groups = await window.Groups.loadGroups();
     renderGroupsBar();
     switchView('table');
+    applyFocusModeUi();
     await scanFolder();
   }
 

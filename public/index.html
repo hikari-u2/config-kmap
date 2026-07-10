@@ -59,6 +59,7 @@
     </div>
 
     <div class="toolbar-group toolbar-group--views">
+      <button id="focus-useful-btn" class="view-btn" type="button" aria-pressed="false" title="Dim Not interested keys while keeping them clickable">Focus useful</button>
       <button id="view-table-btn" class="view-btn">Table</button>
       <button id="view-graph-btn" class="view-btn">Graph</button>
       <button id="view-tree-btn" class="view-btn">Tree</button>
@@ -73,6 +74,7 @@
   </section>
 
   <main class="main-layout">
+    <div id="focus-mode-banner" class="focus-mode-banner hidden">Focus useful mode</div>
     <div id="table-view" class="table-view">
       <table>
         <thead>
@@ -101,6 +103,9 @@
         <div class="graph-legend-row"><span class="graph-legend-swatch" style="background:#6fcf97"></span> Useful (right)</div>
         <div class="graph-legend-row"><span class="graph-legend-swatch" style="background:#9aa1ad"></span> Unset</div>
         <div class="graph-legend-row"><span class="graph-legend-swatch" style="background:#6fcf97;opacity:0.5"></span> Inherited from parent</div>
+        <div class="graph-legend-row"><span class="graph-legend-swatch" style="background:transparent;border:2px solid #5aa9e6;box-sizing:border-box"></span> Useful description</div>
+        <div class="graph-legend-row"><span class="graph-legend-swatch" style="background:#555b66"></span> Focus dims Not interested</div>
+        <div class="graph-legend-row"><span class="graph-legend-line" style="border-color:#d8b93e"></span> Focus description note</div>
       </div>
     </div>
 
@@ -113,6 +118,8 @@
       <div class="detail-row">
         <label for="detail-description">Description</label>
         <textarea id="detail-description" rows="4" placeholder="What does this field mean?"></textarea>
+        <div id="detail-readonly-note" class="detail-readonly-note hidden">Editing is disabled while Focus useful is active.</div>
+        <div id="detail-description-visibility" class="detail-description-visibility hidden"></div>
       </div>
       <div class="detail-row">
         <label for="detail-tags">Tags (comma separated)</label>

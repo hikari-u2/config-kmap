@@ -42,6 +42,7 @@ function createGraph(container) {
   let groupsForNodeFn = null; // (key) => [{ id, color, name }, ...]
   let infoForNodeFn = null;   // (key) => { value, description, tags: [] }
   let statusForKeyFn = null;  // (key) => { status: 'useful'|'useless'|'', inherited: bool }
+  let focusUseful = false;
   let hoveredKey = null;
   // adjacency for hover highlighting: key -> Set of related keys (parent/children + group siblings)
   let adjacency = new Map();
@@ -277,6 +278,11 @@ function createGraph(container) {
     return '#9aa1ad';
   }
 
+  function displayStatusColor(status) {
+    if (focusUseful && status === 'useless') return '#555b66';
+    return statusColor(status);
+  }
+
   function statusOf(key) {
     const eff = statusForKeyFn ? statusForKeyFn(key) : null;
     if (!eff) return { status: '', inherited: false };
@@ -295,6 +301,11 @@ function createGraph(container) {
       line.setAttribute('x2', edge.target.x);
       line.setAttribute('y2', edge.target.y);
       line.setAttribute('class', 'graph-edge');
+      const sourceStatus = statusOf(edge.source.id).status;
+      const targetStatus = statusOf(edge.target.id).status;
+      if (focusUseful && (sourceStatus === 'useless' || targetStatus === 'useless')) {
+        line.classList.add('graph-edge--focus-dimmed');
+      }
       line.dataset.source = edge.source.id;
       line.dataset.target = edge.target.id;
       edgesGroup.appendChild(line);
@@ -308,6 +319,11 @@ function createGraph(container) {
       line.setAttribute('y2', edge.target.y);
       line.setAttribute('class', 'graph-edge graph-edge--group');
       line.setAttribute('stroke', edge.color || '#5aa9e6');
+      const sourceStatus = statusOf(edge.source.id).status;
+      const targetStatus = statusOf(edge.target.id).status;
+      if (focusUseful && (sourceStatus === 'useless' || targetStatus === 'useless')) {
+        line.classList.add('graph-edge--focus-dimmed');
+      }
       line.dataset.source = edge.source.id;
       line.dataset.target = edge.target.id;
       edgesGroup.appendChild(line);
@@ -331,10 +347,11 @@ function createGraph(container) {
       // sections keep the default section color until a status is set.
       // Inline style so it wins over the stylesheet's class-based fill.
       const eff = statusOf(n.id);
+      if (focusUseful && eff.status === 'useless') g.classList.add('graph-node--focus-dimmed');
       if (n.isLeaf) {
-        circle.style.fill = statusColor(eff.status);
+        circle.style.fill = displayStatusColor(eff.status);
       } else if (eff.status) {
-        circle.style.fill = statusColor(eff.status);
+        circle.style.fill = displayStatusColor(eff.status);
       }
       if (eff.inherited) g.classList.add('graph-node--inherited');
       g.appendChild(circle);
@@ -538,6 +555,7 @@ function createGraph(container) {
     setGroupsChecker(fn) { groupsForNodeFn = fn; render(); },
     setInfoProvider(fn) { infoForNodeFn = fn; },
     setStatusProvider(fn) { statusForKeyFn = fn; },
+    setFocusUseful(enabled) { focusUseful = Boolean(enabled); render(); },
     refresh() { render(); },
     resetView() { viewX = 0; viewY = 0; viewScale = 1; applyViewBox(); },
     fitToView,
