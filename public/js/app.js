@@ -178,7 +178,7 @@
     setStatus(`Loaded ${state.entries.length} entries from ${label}`);
     renderTable();
     renderGraph();
-    renderTree();
+    renderTree(true);
     updateAnnotatedCount();
   }
 
@@ -275,10 +275,16 @@
     setTimeout(() => graph.fitToView(), 400);
   }
 
-  function renderTree() {
+  function renderTree(resetView) {
     if (!state.tree) return;
     tree.setData(state.tree);
-    setTimeout(() => tree.fitToView(), 0);
+    // Only snap the viewport to fit the whole tree on the initial load of
+    // a file. Re-rendering after a status change (setStatusForActiveKey
+    // calls this to recolor nodes) should leave pan/zoom exactly where
+    // the user left it - otherwise every status click yanks the view back
+    // out to the full tree, which is disorienting when working through a
+    // deeply nested/zoomed-in section.
+    if (resetView) setTimeout(() => tree.fitToView(), 0);
   }
 
   function renderGraphLegend() {
