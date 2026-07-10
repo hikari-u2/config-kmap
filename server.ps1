@@ -113,7 +113,10 @@ try {
     $listener.Prefixes.Add($prefix)
     $listener.Start()
 } catch {
-    $listener.Prefixes.Clear()
+    # A failed Start() disposes the HttpListener, so the fallback must use a
+    # fresh instance - touching the old one throws ObjectDisposedException.
+    $listener.Close()
+    $listener = [System.Net.HttpListener]::new()
     $prefix = "http://localhost:$Port/"
     $listener.Prefixes.Add($prefix)
     try {
