@@ -258,6 +258,7 @@ function createTree(container) {
     while (nodesGroup.firstChild) nodesGroup.removeChild(nodesGroup.firstChild);
     while (calloutsGroup.firstChild) calloutsGroup.removeChild(calloutsGroup.firstChild);
     calloutBounds = [];
+    const pendingHitAreas = []; // { label, hitArea, radius, labelSide } for the batched measuring pass
 
     const idToNode = new Map(layoutNodes.map((n) => [n.id, n]));
 
@@ -368,28 +369,37 @@ function createTree(container) {
       // so gaps between the circle and label (e.g. the space right after
       // the circle, or past the end of a short label) would fall through
       // to the background <svg> instead of triggering this node - which
-      // looked like clicks on tree nodes "not working". Size the hit area
-      // from the label's actual rendered bounding box so the whole row is
-      // clickable/hoverable without guessing at text width. getBBox() can
-      // occasionally report a ~0-size box on the very first render right
-      // after the text is created (before the browser has done a layout
-      // pass for it); fall back to a character-count estimate in that
-      // case, since the tree only re-renders on data/status changes (no
-      // continuous animation loop like the graph view) so a bad first
-      // measurement here would otherwise stick permanently.
-      const labelBox = label.getBBox();
+      // looked like clicks on tree nodes "not working". The rect gets its
+      // real geometry from the batched measuring pass after this loop.
+      const hitArea = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      hitArea.setAttribute('fill', 'transparent');
+      hitArea.setAttribute('class', 'tree-node-hitarea');
+      g.insertBefore(hitArea, g.firstChild);
+      pendingHitAreas.push({ label, hitArea, radius, labelSide });
+    }
+
+    // Size hit areas from each label's actual rendered bounding box so the
+    // whole row is clickable/hoverable without guessing at text width.
+    // Reads (getBBox) and writes (rect attributes) run in separate passes:
+    // interleaving them inside the node loop forced a synchronous reflow
+    // per node, which at ~124 nodes made every render (each status click
+    // re-renders the tree) cost ~124 layout passes instead of one.
+    // getBBox() reports a ~0-size box while the view is hidden or before
+    // the first layout pass for the text; fall back to a character-count
+    // estimate in that case, since the tree only re-renders on data/status
+    // changes (no continuous animation loop like the graph view) so a bad
+    // first measurement here would otherwise stick permanently.
+    const labelBoxes = pendingHitAreas.map((p) => p.label.getBBox());
+    pendingHitAreas.forEach(({ label, hitArea, radius, labelSide }, i) => {
+      const labelBox = labelBoxes[i];
       const estimatedWidth = String(label.textContent || '').length * 6.5;
       const labelWidth = labelBox.width > 4 ? labelBox.width : estimatedWidth;
       const labelX = labelBox.width > 4 ? labelBox.x : (labelSide === 'left' ? -radius - 8 - estimatedWidth : radius + 8);
-      const hitArea = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
       hitArea.setAttribute('x', Math.min(-radius - 4, labelX - 2));
       hitArea.setAttribute('y', -radius - 4);
       hitArea.setAttribute('width', Math.max(radius * 2 + 8, (labelX + labelWidth + 2) - Math.min(-radius - 4, labelX - 2)));
       hitArea.setAttribute('height', radius * 2 + 8);
-      hitArea.setAttribute('fill', 'transparent');
-      hitArea.setAttribute('class', 'tree-node-hitarea');
-      g.insertBefore(hitArea, g.firstChild);
-    }
+    });
 
     renderFocusCallouts();
     updateHoverHighlight();

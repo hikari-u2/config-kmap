@@ -3,24 +3,43 @@
  * spring/repulsion simulation. No external dependencies (no D3/CDN),
  * since this app is meant to run fully offline from a local PowerShell
  * server.
+ *
+ * Rendering is split into three phases so the per-frame cost during the
+ * force simulation stays tiny:
+ *   - buildScene():      creates SVG elements + listeners, once per data or
+ *                        group-structure change.
+ *   - updatePositions(): only writes transforms / line endpoints on the
+ *                        existing elements; runs every simulation frame and
+ *                        while dragging a node.
+ *   - refreshStyles():   recolors / re-dims the existing elements when
+ *                        statuses, annotations, or focus mode change - no
+ *                        DOM rebuild at all.
+ * An earlier version rebuilt the entire SVG every simulation frame and
+ * registered fresh window-level drag listeners for every node on every
+ * rebuild. With ~300 sim frames per layout that accumulated tens of
+ * thousands of permanent mousemove listeners (and pinned every discarded
+ * DOM tree in memory via their closures), which made the whole app -
+ * zooming, clicking, editing - progressively slower the longer it ran.
  */
+
+const GRAPH_SVG_NS = 'http://www.w3.org/2000/svg';
 
 function truncate(text, max) {
   if (text == null) return '';
   const s = String(text);
-  return s.length > max ? s.slice(0, max - 1) + '\u2026' : s;
+  return s.length > max ? s.slice(0, max - 1) + '…' : s;
 }
 
 function createGraph(container) {
   container.style.position = container.style.position || 'relative';
 
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  const svg = document.createElementNS(GRAPH_SVG_NS, 'svg');
   svg.setAttribute('class', 'graph-svg');
   container.appendChild(svg);
 
-  const edgesGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  const edgesGroup = document.createElementNS(GRAPH_SVG_NS, 'g');
   edgesGroup.setAttribute('class', 'edges');
-  const nodesGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  const nodesGroup = document.createElementNS(GRAPH_SVG_NS, 'g');
   nodesGroup.setAttribute('class', 'nodes');
   svg.appendChild(edgesGroup);
   svg.appendChild(nodesGroup);
@@ -46,6 +65,13 @@ function createGraph(container) {
   let hoveredKey = null;
   // adjacency for hover highlighting: key -> Set of related keys (parent/children + group siblings)
   let adjacency = new Map();
+
+  // Scene element registry, rebuilt by buildScene() and updated in place by
+  // updatePositions() / refreshStyles() between rebuilds.
+  let nodeEls = new Map(); // node.id -> { node, g, circle, label, hitArea, radius }
+  let edgeEls = [];        // { edge, line } for tree edges + group edges
+  let parentNameById = new Map(); // node id -> parent section name, for leaf labels
+  let hitAreasMeasured = false;
 
   // Pan/zoom state
   let viewX = 0, viewY = 0, viewScale = 1;
@@ -77,6 +103,22 @@ function createGraph(container) {
   });
   window.addEventListener('mouseup', () => { isPanning = false; });
 
+  // One window-level listener pair handles dragging for ALL nodes; each
+  // node's mousedown just records itself as the drag target. (These used
+  // to be registered per node inside the render loop, which is where the
+  // listener leak described in the header comment came from.)
+  let draggedNode = null;
+  window.addEventListener('mousemove', (e) => {
+    if (!draggedNode) return;
+    const rect = svg.getBoundingClientRect();
+    draggedNode.x = viewX + ((e.clientX - rect.left) / rect.width) * (width / viewScale);
+    draggedNode.y = viewY + ((e.clientY - rect.top) / rect.height) * (height / viewScale);
+    draggedNode.vx = 0;
+    draggedNode.vy = 0;
+    updatePositions();
+  });
+  window.addEventListener('mouseup', () => { draggedNode = null; });
+
   svg.addEventListener('wheel', (e) => {
     e.preventDefault();
     const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
@@ -95,6 +137,11 @@ function createGraph(container) {
     width = container.clientWidth || width;
     height = container.clientHeight || height;
     applyViewBox();
+    // The scene may have been built while this view was hidden
+    // (display:none), where getBBox() reports zero-size boxes and the hit
+    // areas fall back to estimates. Re-measure once the view is actually
+    // shown so hit areas match the real rendered labels.
+    if (!hitAreasMeasured && nodeEls.size) measureHitAreas();
   }
   window.addEventListener('resize', resize);
 
@@ -133,8 +180,15 @@ function createGraph(container) {
       simNodes.unshift(idToNode.get('__root__'));
     }
 
+    // Leaf labels show "parent.name = value"; resolve each node's parent
+    // once here instead of scanning simEdges per label on every rebuild.
+    parentNameById = new Map();
+    for (const e of simEdges) {
+      if (e.source.id !== '__root__') parentNameById.set(e.target.id, e.source.name);
+    }
+
     rebuildAdjacency();
-    render();
+    buildScene();
     startSimulation();
   }
 
@@ -154,6 +208,8 @@ function createGraph(container) {
    * Recompute cross-cutting group edges (pairs of nodes sharing a group)
    * from the current node set + the groups list, and restart the sim so
    * grouped nodes pull toward each other regardless of tree distance.
+   * Node positions and the current pan/zoom are preserved - only the group
+   * links (and their spring forces) change.
    * groups: [{ id, color, name, keys: [fullKey,...] }, ...]
    */
   function setGroups(groups) {
@@ -169,7 +225,7 @@ function createGraph(container) {
     }
     groupEdges = edges;
     rebuildAdjacency();
-    render();
+    buildScene();
     startSimulation();
   }
 
@@ -190,7 +246,7 @@ function createGraph(container) {
 
     function tick() {
       step();
-      render();
+      updatePositions();
       iterations++;
       let totalSpeedSq = 0;
       for (const n of simNodes) {
@@ -290,75 +346,51 @@ function createGraph(container) {
     return { status: s, inherited: Boolean(s && eff.inherited) };
   }
 
-  function render() {
+  /**
+   * Create the SVG elements for the current node/edge sets. Called once per
+   * data or group change - NOT per simulation frame. Positions and status
+   * styling are applied by updatePositions()/refreshStyles() afterwards.
+   */
+  function buildScene() {
     while (edgesGroup.firstChild) edgesGroup.removeChild(edgesGroup.firstChild);
     while (nodesGroup.firstChild) nodesGroup.removeChild(nodesGroup.firstChild);
+    nodeEls = new Map();
+    edgeEls = [];
 
     for (const edge of simEdges) {
-      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      line.setAttribute('x1', edge.source.x);
-      line.setAttribute('y1', edge.source.y);
-      line.setAttribute('x2', edge.target.x);
-      line.setAttribute('y2', edge.target.y);
+      const line = document.createElementNS(GRAPH_SVG_NS, 'line');
       line.setAttribute('class', 'graph-edge');
-      const sourceStatus = statusOf(edge.source.id).status;
-      const targetStatus = statusOf(edge.target.id).status;
-      if (focusUseful && (sourceStatus === 'useless' || targetStatus === 'useless')) {
-        line.classList.add('graph-edge--focus-dimmed');
-      }
       line.dataset.source = edge.source.id;
       line.dataset.target = edge.target.id;
       edgesGroup.appendChild(line);
+      edgeEls.push({ edge, line });
     }
 
     for (const edge of groupEdges) {
-      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      line.setAttribute('x1', edge.source.x);
-      line.setAttribute('y1', edge.source.y);
-      line.setAttribute('x2', edge.target.x);
-      line.setAttribute('y2', edge.target.y);
+      const line = document.createElementNS(GRAPH_SVG_NS, 'line');
       line.setAttribute('class', 'graph-edge graph-edge--group');
       line.setAttribute('stroke', edge.color || '#5aa9e6');
-      const sourceStatus = statusOf(edge.source.id).status;
-      const targetStatus = statusOf(edge.target.id).status;
-      if (focusUseful && (sourceStatus === 'useless' || targetStatus === 'useless')) {
-        line.classList.add('graph-edge--focus-dimmed');
-      }
       line.dataset.source = edge.source.id;
       line.dataset.target = edge.target.id;
       edgesGroup.appendChild(line);
+      edgeEls.push({ edge, line });
     }
 
     for (const n of simNodes) {
       if (n.id === '__root__') continue;
-      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-      g.setAttribute('transform', `translate(${n.x}, ${n.y})`);
+      const g = document.createElementNS(GRAPH_SVG_NS, 'g');
       g.setAttribute('class', n.isLeaf ? 'graph-node graph-node--leaf' : 'graph-node graph-node--section');
       g.dataset.key = n.id;
 
-      const annotated = hasAnnotationFn ? hasAnnotationFn(n.id) : false;
-      if (annotated) g.classList.add('graph-node--annotated');
-
       const radius = n.isLeaf ? 6 : 10;
 
-      const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      const circle = document.createElementNS(GRAPH_SVG_NS, 'circle');
       circle.setAttribute('r', radius);
-      // Status coloring: leaves are always tinted by their (effective) status,
-      // sections keep the default section color until a status is set.
-      // Inline style so it wins over the stylesheet's class-based fill.
-      const eff = statusOf(n.id);
-      if (focusUseful && eff.status === 'useless') g.classList.add('graph-node--focus-dimmed');
-      if (n.isLeaf) {
-        circle.style.fill = displayStatusColor(eff.status);
-      } else if (eff.status) {
-        circle.style.fill = displayStatusColor(eff.status);
-      }
-      if (eff.inherited) g.classList.add('graph-node--inherited');
       g.appendChild(circle);
 
       const memberGroups = groupsForNodeFn ? groupsForNodeFn(n.id) : [];
       memberGroups.forEach((grp, gi) => {
-        const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        const dot = document.createElementNS(GRAPH_SVG_NS, 'circle');
         dot.setAttribute('r', 3);
         dot.setAttribute('cx', -radius - 4 - gi * 8);
         dot.setAttribute('cy', -radius - 2);
@@ -369,10 +401,9 @@ function createGraph(container) {
       // Label: for leaves, show "parent.name = value" so the field's context
       // is readable without having to trace edges back through the graph.
       // Sections just show their own name.
-      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      const label = document.createElementNS(GRAPH_SVG_NS, 'text');
       if (n.isLeaf) {
-        const parentEdge = simEdges.find((e) => e.target === n);
-        const parentName = parentEdge && parentEdge.source && parentEdge.source.id !== '__root__' ? parentEdge.source.name : '';
+        const parentName = parentNameById.get(n.id) || '';
         const context = parentName ? `${parentName}.${n.name}` : n.name;
         label.textContent = `${truncate(context, 26)} = ${truncate(n.value, 16)}`;
       } else {
@@ -387,16 +418,13 @@ function createGraph(container) {
       });
 
       // Hovering only needs to toggle highlight classes on the existing
-      // elements (updateHoverHighlight), NOT a full render(). A full
-      // render() tears down and recreates every node/edge element in the
-      // SVG; if the mouse crosses several nodes' hover boundaries while
-      // moving toward a click target (very likely, since hover areas are
-      // adjacent), the element under the cursor can get detached from the
-      // DOM between mousedown and mouseup, silently swallowing the click.
-      // That looked like "clicking graph nodes does nothing." (The force
-      // simulation's own per-frame render() calls are unavoidable since
-      // node positions genuinely move, but at least hover no longer adds
-      // to that churn.)
+      // elements (updateHoverHighlight), NOT a rebuild. A rebuild tears
+      // down and recreates every node/edge element in the SVG; if the
+      // mouse crosses several nodes' hover boundaries while moving toward
+      // a click target (very likely, since hover areas are adjacent), the
+      // element under the cursor can get detached from the DOM between
+      // mousedown and mouseup, silently swallowing the click. That looked
+      // like "clicking graph nodes does nothing."
       g.addEventListener('mouseenter', (e) => {
         hoveredKey = n.id;
         updateHoverHighlight();
@@ -409,55 +437,110 @@ function createGraph(container) {
         updateHoverHighlight();
       });
 
-      // Allow dragging individual nodes.
-      let dragging = false;
+      // Dragging: just claim the shared window-level drag handler (see the
+      // listener setup near the pan/zoom handlers above).
       g.addEventListener('mousedown', (e) => {
-        dragging = true;
+        draggedNode = n;
         e.stopPropagation();
       });
-      window.addEventListener('mousemove', (e) => {
-        if (!dragging) return;
-        const rect = svg.getBoundingClientRect();
-        n.x = viewX + ((e.clientX - rect.left) / rect.width) * (width / viewScale);
-        n.y = viewY + ((e.clientY - rect.top) / rect.height) * (height / viewScale);
-        n.vx = 0; n.vy = 0;
-        render();
-      });
-      window.addEventListener('mouseup', () => { dragging = false; });
-
-      nodesGroup.appendChild(g);
 
       // SVG only registers clicks/hovers on painted pixels by default
       // (pointer-events: visiblePainted); the <g> itself paints nothing,
       // so gaps between the circle and its label text would fall through
       // to the background <svg> (starting a pan) instead of hitting this
       // node - which looked like clicks on graph nodes "not working".
-      // Size the hit area from the label's actual rendered bounding box
-      // rather than a pure estimate: in this force-directed layout nodes
-      // can end up close together, and an over-generous estimated hit
-      // area would overlap and block clicks on *other* nearby nodes
-      // instead of just filling the gaps around this one. getBBox() can
-      // still occasionally report a ~0-size box on the very first render
-      // right after the text is created (before the browser has done a
-      // layout pass for it), so fall back to a rough character-count
-      // estimate in that case rather than leaving an unusably tiny hit
-      // area stuck in place (this bit us: once the force simulation
-      // settles, render() stops running, so a bad first measurement was
-      // never corrected).
-      const labelBox = label.getBBox();
+      // The rect is created here with placeholder geometry; its real size
+      // comes from measureHitAreas() below, which batches the label
+      // measurements so the browser doesn't reflow once per node.
+      const hitArea = document.createElementNS(GRAPH_SVG_NS, 'rect');
+      hitArea.setAttribute('fill', 'transparent');
+      hitArea.setAttribute('class', 'graph-node-hitarea');
+      g.insertBefore(hitArea, g.firstChild);
+
+      nodesGroup.appendChild(g);
+      nodeEls.set(n.id, { node: n, g, circle, label, hitArea, radius });
+    }
+
+    updatePositions();
+    refreshStyles();
+    measureHitAreas();
+  }
+
+  /**
+   * Size each node's hit area from its label's actual rendered bounding
+   * box. In this force-directed layout nodes can end up close together,
+   * and an over-generous estimated hit area would overlap and block clicks
+   * on *other* nearby nodes instead of just filling the gaps around this
+   * one. Reads (getBBox) and writes (rect attributes) are done in separate
+   * passes: interleaving them forces a synchronous reflow per node, which
+   * at ~124 nodes made every rebuild cost ~124 layout passes.
+   *
+   * getBBox() reports a ~0-size box when the view is hidden (display:none)
+   * or before the first layout pass for the text; fall back to a rough
+   * character-count estimate then, and let resize() re-measure once the
+   * view is actually visible so a bad measurement doesn't stick.
+   */
+  function measureHitAreas() {
+    const entries = [...nodeEls.values()];
+    const boxes = entries.map(({ label }) => label.getBBox());
+
+    let anyReal = false;
+    entries.forEach(({ node, label, hitArea, radius }, i) => {
+      const box = boxes[i];
+      if (box.width > 4) anyReal = true;
       const estimatedWidth = String(label.textContent || '').length * 6.5;
-      const labelWidth = labelBox.width > 4 ? labelBox.width : estimatedWidth;
-      const labelX = labelBox.width > 4 ? labelBox.x : (n.isLeaf ? 10 : 14);
-      const hitArea = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      const labelWidth = box.width > 4 ? box.width : estimatedWidth;
+      const labelX = box.width > 4 ? box.x : (node.isLeaf ? 10 : 14);
       hitArea.setAttribute('x', -radius - 4);
       hitArea.setAttribute('y', -radius - 4);
       hitArea.setAttribute('width', Math.max(radius * 2 + 8, labelX + labelWidth + 4 - (-radius - 4)));
       hitArea.setAttribute('height', radius * 2 + 8);
-      hitArea.setAttribute('fill', 'transparent');
-      hitArea.setAttribute('class', 'graph-node-hitarea');
-      g.insertBefore(hitArea, g.firstChild);
-    }
+    });
+    hitAreasMeasured = anyReal || entries.length === 0;
+  }
 
+  /**
+   * Write current simulation coordinates onto the existing elements.
+   * This is the only work done per simulation frame.
+   */
+  function updatePositions() {
+    for (const { edge, line } of edgeEls) {
+      line.setAttribute('x1', edge.source.x);
+      line.setAttribute('y1', edge.source.y);
+      line.setAttribute('x2', edge.target.x);
+      line.setAttribute('y2', edge.target.y);
+    }
+    for (const { node, g } of nodeEls.values()) {
+      g.setAttribute('transform', `translate(${node.x}, ${node.y})`);
+    }
+  }
+
+  /**
+   * Re-apply status colors, annotation rings, inherited markers, and focus
+   * dimming to the existing elements. Called after annotation/status/focus
+   * changes - much cheaper than rebuilding the scene, and it leaves node
+   * positions and the current pan/zoom untouched.
+   */
+  function refreshStyles() {
+    for (const { node, g, circle } of nodeEls.values()) {
+      const eff = statusOf(node.id);
+      g.classList.toggle('graph-node--annotated', Boolean(hasAnnotationFn && hasAnnotationFn(node.id)));
+      g.classList.toggle('graph-node--inherited', eff.inherited);
+      g.classList.toggle('graph-node--focus-dimmed', focusUseful && eff.status === 'useless');
+      // Status coloring: leaves are always tinted by their (effective) status,
+      // sections keep the default section color until a status is set.
+      // Inline style so it wins over the stylesheet's class-based fill.
+      if (node.isLeaf || eff.status) {
+        circle.style.fill = displayStatusColor(eff.status);
+      } else {
+        circle.style.fill = '';
+      }
+    }
+    for (const { edge, line } of edgeEls) {
+      const dimmed = focusUseful &&
+        (statusOf(edge.source.id).status === 'useless' || statusOf(edge.target.id).status === 'useless');
+      line.classList.toggle('graph-edge--focus-dimmed', dimmed);
+    }
     updateHoverHighlight();
   }
 
@@ -552,11 +635,11 @@ function createGraph(container) {
     resize,
     onNodeClick(fn) { onNodeClick = fn; },
     setAnnotationChecker(fn) { hasAnnotationFn = fn; },
-    setGroupsChecker(fn) { groupsForNodeFn = fn; render(); },
+    setGroupsChecker(fn) { groupsForNodeFn = fn; buildScene(); },
     setInfoProvider(fn) { infoForNodeFn = fn; },
     setStatusProvider(fn) { statusForKeyFn = fn; },
-    setFocusUseful(enabled) { focusUseful = Boolean(enabled); render(); },
-    refresh() { render(); },
+    setFocusUseful(enabled) { focusUseful = Boolean(enabled); refreshStyles(); },
+    refresh() { refreshStyles(); },
     resetView() { viewX = 0; viewY = 0; viewScale = 1; applyViewBox(); },
     fitToView,
   };

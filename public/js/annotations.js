@@ -48,22 +48,44 @@ async function loadAnnotations() {
   return cache;
 }
 
-async function saveAnnotations(all) {
-  cache = all;
-  localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(all));
+// Server writes happen in the background so the UI never waits on the
+// network: by the time pushAnnotationsToServer runs, the in-memory cache
+// and the localStorage mirror are already updated. Posts are coalesced -
+// if one is in flight, we just remember to send the latest snapshot when
+// it finishes - so rapid edits (clicking through statuses) don't queue N
+// sequential round-trips to the single-threaded PowerShell server.
+let annotationsPostInFlight = false;
+let annotationsPostQueued = false;
 
-  try {
-    const res = await fetch('/api/annotations', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(all),
-    });
+function pushAnnotationsToServer() {
+  if (annotationsPostInFlight) {
+    annotationsPostQueued = true;
+    return;
+  }
+  annotationsPostInFlight = true;
+  fetch('/api/annotations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(cache),
+  }).then((res) => {
     if (!res.ok) {
       console.warn('Server rejected annotations save; kept localStorage copy only.');
     }
-  } catch (err) {
+  }).catch((err) => {
     console.warn('Could not reach server to save annotations.json; kept localStorage copy only.', err);
-  }
+  }).then(() => {
+    annotationsPostInFlight = false;
+    if (annotationsPostQueued) {
+      annotationsPostQueued = false;
+      pushAnnotationsToServer();
+    }
+  });
+}
+
+async function saveAnnotations(all) {
+  cache = all;
+  localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(all));
+  pushAnnotationsToServer();
 }
 
 async function getAnnotation(key) {

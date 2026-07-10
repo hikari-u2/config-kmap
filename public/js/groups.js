@@ -51,22 +51,42 @@ async function loadGroups() {
   return groupsCache;
 }
 
-async function saveGroups(state) {
-  groupsCache = normalize(state);
-  localStorage.setItem(GROUPS_LOCAL_STORAGE_KEY, JSON.stringify(groupsCache));
+// Server writes happen in the background so the UI never waits on the
+// network (mirrors annotations.js): the cache and localStorage are already
+// updated before the post fires, and posts are coalesced so rapid edits
+// don't queue sequential round-trips to the single-threaded server.
+let groupsPostInFlight = false;
+let groupsPostQueued = false;
 
-  try {
-    const res = await fetch('/api/groups', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(groupsCache),
-    });
+function pushGroupsToServer() {
+  if (groupsPostInFlight) {
+    groupsPostQueued = true;
+    return;
+  }
+  groupsPostInFlight = true;
+  fetch('/api/groups', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(groupsCache),
+  }).then((res) => {
     if (!res.ok) {
       console.warn('Server rejected groups save; kept localStorage copy only.');
     }
-  } catch (err) {
+  }).catch((err) => {
     console.warn('Could not reach server to save groups.json; kept localStorage copy only.', err);
-  }
+  }).then(() => {
+    groupsPostInFlight = false;
+    if (groupsPostQueued) {
+      groupsPostQueued = false;
+      pushGroupsToServer();
+    }
+  });
+}
+
+async function saveGroups(state) {
+  groupsCache = normalize(state);
+  localStorage.setItem(GROUPS_LOCAL_STORAGE_KEY, JSON.stringify(groupsCache));
+  pushGroupsToServer();
   return groupsCache;
 }
 

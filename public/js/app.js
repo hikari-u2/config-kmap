@@ -456,7 +456,11 @@
     state.groups = await window.Groups.setKeyGroups(key, next);
     renderGroupsBar();
     renderTable();
-    renderGraph();
+    // Update the graph's group links/dots in place instead of re-laying out
+    // the whole graph (renderGraph -> setData restarts the force simulation
+    // from random positions and re-frames the viewport - disorienting and
+    // expensive for a one-checkbox change).
+    graph.setGroups(state.groups.groups);
     renderTree();
     setStatus(`Updated groups for "${key}"`);
   }
@@ -478,7 +482,9 @@
     setStatus(`Saved annotation for "${state.activeKey}"`);
     updateDescriptionVisibilityNote(state.activeKey);
     renderTable();
-    renderGraph();
+    // Annotations only change colors/badges, not graph structure: recolor
+    // the existing graph elements instead of re-laying out from scratch.
+    graph.refresh();
     renderTree();
     updateAnnotatedCount();
   }
@@ -521,7 +527,10 @@
         if (state.groupFilter === g.id) state.groupFilter = '';
         renderGroupsBar();
         renderTable();
-        renderGraph();
+        // Drop the group's links/dots in place; a full renderGraph would
+        // re-run the force layout and lose the user's positions and view.
+        graph.setGroups(state.groups.groups);
+        renderGraphLegend();
         renderTree();
         if (state.activeKey) renderDetailGroups(state.activeKey);
       });
