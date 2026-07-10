@@ -237,12 +237,8 @@ function createTree(container) {
       const annotated = hasAnnotationFn ? hasAnnotationFn(n.id) : false;
       if (annotated) g.classList.add('tree-node--annotated');
 
-      if (hoveredKey) {
-        const related = hoveredKey === n.id || (adjacency.get(hoveredKey) && adjacency.get(hoveredKey).has(n.id));
-        g.classList.add(related ? 'tree-node--focused' : 'tree-node--dimmed');
-      }
-
       const radius = n.isLeaf ? 6 : 9;
+
       const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
       circle.setAttribute('r', radius);
       // Inline style so it wins over the stylesheet's class-based fill
@@ -286,21 +282,74 @@ function createTree(container) {
         if (onNodeClick) onNodeClick(n.id, n.isLeaf, n.value);
       });
 
+      // Hovering only needs to toggle highlight classes on the existing
+      // elements (updateHoverHighlight), NOT a full render(). A full
+      // render() tears down and recreates every node/edge element in the
+      // SVG; if the mouse crosses several nodes' hover boundaries while
+      // moving toward a click target (very likely, since hover areas are
+      // adjacent), the element under the cursor can get detached from the
+      // DOM between mousedown and mouseup, silently swallowing the click.
+      // That looked like "clicking tree nodes does nothing."
       g.addEventListener('mouseenter', (e) => {
         hoveredKey = n.id;
-        render();
+        updateHoverHighlight();
         showTooltip(n, e);
       });
       g.addEventListener('mousemove', (e) => moveTooltip(e));
       g.addEventListener('mouseleave', () => {
         hoveredKey = null;
         hideTooltip();
-        render();
+        updateHoverHighlight();
       });
 
       nodesGroup.appendChild(g);
+
+      // SVG only registers clicks/hovers on painted pixels by default
+      // (pointer-events: visiblePainted); the <g> itself paints nothing,
+      // so gaps between the circle and label (e.g. the space right after
+      // the circle, or past the end of a short label) would fall through
+      // to the background <svg> instead of triggering this node - which
+      // looked like clicks on tree nodes "not working". Size the hit area
+      // from the label's actual rendered bounding box so the whole row is
+      // clickable/hoverable without guessing at text width. getBBox() can
+      // occasionally report a ~0-size box on the very first render right
+      // after the text is created (before the browser has done a layout
+      // pass for it); fall back to a character-count estimate in that
+      // case, since the tree only re-renders on data/status changes (no
+      // continuous animation loop like the graph view) so a bad first
+      // measurement here would otherwise stick permanently.
+      const labelBox = label.getBBox();
+      const estimatedWidth = String(label.textContent || '').length * 6.5;
+      const labelWidth = labelBox.width > 4 ? labelBox.width : estimatedWidth;
+      const labelX = labelBox.width > 4 ? labelBox.x : (labelSide === 'left' ? -radius - 8 - estimatedWidth : radius + 8);
+      const hitArea = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      hitArea.setAttribute('x', Math.min(-radius - 4, labelX - 2));
+      hitArea.setAttribute('y', -radius - 4);
+      hitArea.setAttribute('width', Math.max(radius * 2 + 8, (labelX + labelWidth + 2) - Math.min(-radius - 4, labelX - 2)));
+      hitArea.setAttribute('height', radius * 2 + 8);
+      hitArea.setAttribute('fill', 'transparent');
+      hitArea.setAttribute('class', 'tree-node-hitarea');
+      g.insertBefore(hitArea, g.firstChild);
     }
 
+    updateHoverHighlight();
+  }
+
+  /**
+   * Toggle focused/dimmed classes on existing node and edge elements to
+   * reflect the current hoveredKey, without rebuilding the SVG DOM (see
+   * the comment above the mouseenter/mouseleave handlers for why that
+   * distinction matters for click reliability).
+   */
+  function updateHoverHighlight() {
+    for (const g of nodesGroup.children) {
+      const key = g.dataset.key;
+      g.classList.remove('tree-node--focused', 'tree-node--dimmed');
+      if (hoveredKey) {
+        const related = hoveredKey === key || (adjacency.get(hoveredKey) && adjacency.get(hoveredKey).has(key));
+        g.classList.add(related ? 'tree-node--focused' : 'tree-node--dimmed');
+      }
+    }
     for (const pathEl of edgesGroup.querySelectorAll('.tree-edge')) {
       if (!hoveredKey) { pathEl.classList.remove('tree-edge--dimmed', 'tree-edge--focused'); continue; }
       const a = pathEl.dataset.source, b = pathEl.dataset.target;

@@ -101,14 +101,27 @@ Add-Type -AssemblyName System.Web
 $listener = [System.Net.HttpListener]::new()
 # "localhost" (unlike a wildcard "+" or "*" prefix) is exempt from Windows'
 # URL ACL reservation, so this binds without requiring an elevated process.
-$prefix = "http://localhost:$Port/"
-$listener.Prefixes.Add($prefix)
-
+# But loopback-only binding means anything outside the loopback interface
+# (e.g. a container/dev-environment port-forwarding proxy) can't reach the
+# server and gets a connection failure/503 even though everything looks
+# fine from `localhost` inside the same machine. Bind "+" (all interfaces)
+# first so remote forwarding works; if that's rejected (no URL ACL / not
+# elevated - typical on a bare Windows install), fall back to loopback-only
+# so local development still works without requiring admin rights.
+$prefix = "http://+:$Port/"
 try {
+    $listener.Prefixes.Add($prefix)
     $listener.Start()
 } catch {
-    Write-Error "Failed to start listener on $prefix. $_"
-    exit 1
+    $listener.Prefixes.Clear()
+    $prefix = "http://localhost:$Port/"
+    $listener.Prefixes.Add($prefix)
+    try {
+        $listener.Start()
+    } catch {
+        Write-Error "Failed to start listener on $prefix. $_"
+        exit 1
+    }
 }
 
 Write-Host "Config Knowledge Map server running at $prefix"

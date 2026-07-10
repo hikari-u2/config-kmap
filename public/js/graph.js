@@ -176,12 +176,28 @@ function createGraph(container) {
     if (rafId) cancelAnimationFrame(rafId);
     let iterations = 0;
     const maxIterations = 300;
+    // Nodes typically settle (velocities near zero) well before
+    // maxIterations. Running the full 300 frames regardless meant clicks
+    // could target where a node *used to be* a moment ago - by the time a
+    // real mouse click's mousedown/mouseup land, the still-moving node
+    // had already drifted elsewhere, and the click just hit empty
+    // background instead (harder to notice on the very first click right
+    // after loading, since a lucky low-movement frame can still line up;
+    // much more apparent on the next click). Stopping as soon as the
+    // layout is visually settled avoids that mismatch.
+    const settleThreshold = 0.05;
 
     function tick() {
       step();
       render();
       iterations++;
-      if (iterations < maxIterations) {
+      let totalSpeedSq = 0;
+      for (const n of simNodes) {
+        if (n.fixed) continue;
+        totalSpeedSq += n.vx * n.vx + n.vy * n.vy;
+      }
+      const settled = totalSpeedSq / Math.max(simNodes.length, 1) < settleThreshold;
+      if (iterations < maxIterations && !settled) {
         rafId = requestAnimationFrame(tick);
       }
     }
@@ -307,12 +323,8 @@ function createGraph(container) {
       const annotated = hasAnnotationFn ? hasAnnotationFn(n.id) : false;
       if (annotated) g.classList.add('graph-node--annotated');
 
-      if (hoveredKey) {
-        const related = hoveredKey === n.id || (adjacency.get(hoveredKey) && adjacency.get(hoveredKey).has(n.id));
-        g.classList.add(related ? 'graph-node--focused' : 'graph-node--dimmed');
-      }
-
       const radius = n.isLeaf ? 6 : 10;
+
       const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
       circle.setAttribute('r', radius);
       // Status coloring: leaves are always tinted by their (effective) status,
@@ -357,16 +369,27 @@ function createGraph(container) {
         if (onNodeClick) onNodeClick(n.id, n.isLeaf, n.value);
       });
 
+      // Hovering only needs to toggle highlight classes on the existing
+      // elements (updateHoverHighlight), NOT a full render(). A full
+      // render() tears down and recreates every node/edge element in the
+      // SVG; if the mouse crosses several nodes' hover boundaries while
+      // moving toward a click target (very likely, since hover areas are
+      // adjacent), the element under the cursor can get detached from the
+      // DOM between mousedown and mouseup, silently swallowing the click.
+      // That looked like "clicking graph nodes does nothing." (The force
+      // simulation's own per-frame render() calls are unavoidable since
+      // node positions genuinely move, but at least hover no longer adds
+      // to that churn.)
       g.addEventListener('mouseenter', (e) => {
         hoveredKey = n.id;
-        render();
+        updateHoverHighlight();
         showTooltip(n, e);
       });
       g.addEventListener('mousemove', (e) => moveTooltip(e));
       g.addEventListener('mouseleave', () => {
         hoveredKey = null;
         hideTooltip();
-        render();
+        updateHoverHighlight();
       });
 
       // Allow dragging individual nodes.
@@ -386,9 +409,56 @@ function createGraph(container) {
       window.addEventListener('mouseup', () => { dragging = false; });
 
       nodesGroup.appendChild(g);
+
+      // SVG only registers clicks/hovers on painted pixels by default
+      // (pointer-events: visiblePainted); the <g> itself paints nothing,
+      // so gaps between the circle and its label text would fall through
+      // to the background <svg> (starting a pan) instead of hitting this
+      // node - which looked like clicks on graph nodes "not working".
+      // Size the hit area from the label's actual rendered bounding box
+      // rather than a pure estimate: in this force-directed layout nodes
+      // can end up close together, and an over-generous estimated hit
+      // area would overlap and block clicks on *other* nearby nodes
+      // instead of just filling the gaps around this one. getBBox() can
+      // still occasionally report a ~0-size box on the very first render
+      // right after the text is created (before the browser has done a
+      // layout pass for it), so fall back to a rough character-count
+      // estimate in that case rather than leaving an unusably tiny hit
+      // area stuck in place (this bit us: once the force simulation
+      // settles, render() stops running, so a bad first measurement was
+      // never corrected).
+      const labelBox = label.getBBox();
+      const estimatedWidth = String(label.textContent || '').length * 6.5;
+      const labelWidth = labelBox.width > 4 ? labelBox.width : estimatedWidth;
+      const labelX = labelBox.width > 4 ? labelBox.x : (n.isLeaf ? 10 : 14);
+      const hitArea = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      hitArea.setAttribute('x', -radius - 4);
+      hitArea.setAttribute('y', -radius - 4);
+      hitArea.setAttribute('width', Math.max(radius * 2 + 8, labelX + labelWidth + 4 - (-radius - 4)));
+      hitArea.setAttribute('height', radius * 2 + 8);
+      hitArea.setAttribute('fill', 'transparent');
+      hitArea.setAttribute('class', 'graph-node-hitarea');
+      g.insertBefore(hitArea, g.firstChild);
     }
 
-    // Dim/focus edges to match hovered node, and dim group edges lacking focus.
+    updateHoverHighlight();
+  }
+
+  /**
+   * Toggle focused/dimmed classes on existing node and edge elements to
+   * reflect the current hoveredKey, without rebuilding the SVG DOM (see
+   * the comment above the mouseenter/mouseleave handlers for why that
+   * distinction matters for click reliability).
+   */
+  function updateHoverHighlight() {
+    for (const g of nodesGroup.children) {
+      const key = g.dataset.key;
+      g.classList.remove('graph-node--focused', 'graph-node--dimmed');
+      if (hoveredKey) {
+        const related = hoveredKey === key || (adjacency.get(hoveredKey) && adjacency.get(hoveredKey).has(key));
+        g.classList.add(related ? 'graph-node--focused' : 'graph-node--dimmed');
+      }
+    }
     for (const lineEl of edgesGroup.querySelectorAll('.graph-edge')) {
       if (!hoveredKey) { lineEl.classList.remove('graph-edge--dimmed', 'graph-edge--focused'); continue; }
       const a = lineEl.dataset.source, b = lineEl.dataset.target;
