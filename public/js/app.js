@@ -23,6 +23,7 @@
     loadSelectedBtn: document.getElementById('load-selected-btn'),
     fileUpload: document.getElementById('file-upload'),
     searchInput: document.getElementById('search-input'),
+    searchWrap: document.querySelector('.search-wrap'),
     mainLayout: document.querySelector('.main-layout'),
     focusModeBanner: document.getElementById('focus-mode-banner'),
     tableBody: document.getElementById('table-body'),
@@ -631,6 +632,8 @@
 
   function switchView(view) {
     state.view = view;
+    // Search only filters the table, so it only appears with the table.
+    el.searchWrap.classList.toggle('hidden', view !== 'table');
     el.tableView.classList.toggle('hidden', view !== 'table');
     el.graphView.classList.toggle('hidden', view !== 'graph');
     el.treeView.classList.toggle('hidden', view !== 'tree');
