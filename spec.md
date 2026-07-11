@@ -1,5 +1,15 @@
 # Useful-Only Description Visualization Spec
 
+> **Partially superseded (July 2026).** Hiding description *text* from the
+> table, tooltips, and search turned out to be a trap for a memory tool:
+> notes on not-yet-Useful keys became unfindable, which defeats the tool's
+> purpose (users return after months and search by meaning). Current policy:
+> description text is **always visible and searchable** everywhere; only the
+> *highlights* — graph/tree annotation rings, focus-mode sticky-note
+> callouts, and the header's annotated count — remain gated on effective
+> `Useful` status. The sections below describe the original design and are
+> kept for the highlight-gating rationale, which still applies.
+
 ## Goal
 
 Users can mark config keys or sections as `Useful`, `Not interested`, or unset. Descriptions may exist on any annotated key, but descriptions should only matter visually when the key is effectively `Useful`.

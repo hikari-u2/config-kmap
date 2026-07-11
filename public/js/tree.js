@@ -61,6 +61,8 @@ function createTree(container) {
 
   let layoutNodes = [];
   let layoutEdges = [];
+  let lastRoot = null;        // retained so collapse toggles can re-layout
+  let collapsedIds = new Set(); // section ids whose children are hidden
   let onNodeClick = null;
   let hasAnnotationFn = null;
   let groupsForNodeFn = null;
@@ -162,9 +164,17 @@ function createTree(container) {
       return { status: s, inherited: Boolean(s && eff.inherited) };
     }
 
+    function countLeaves(node) {
+      if (node.isLeaf) return 1;
+      let sum = 0;
+      for (const child of node.children.values()) sum += countLeaves(child);
+      return sum;
+    }
+
     function visit(node, depth, parentId) {
       const isSynthRoot = node.fullKey === '' || node.fullKey == null;
       let currentId = parentId;
+      let collapsed = false;
 
       if (!isSynthRoot) {
         const y = rowHeight + rowIndex * rowHeight;
@@ -187,6 +197,7 @@ function createTree(container) {
           x = centerX + Math.min(depth * indentPerDepth, maxIndent);
         }
 
+        collapsed = !node.isLeaf && collapsedIds.has(node.fullKey);
         nodes.push({
           id: node.fullKey,
           name: node.name,
@@ -197,10 +208,16 @@ function createTree(container) {
           y,
           status: eff.status,
           statusInherited: eff.inherited,
+          collapsed,
+          leafCount: node.isLeaf ? 0 : countLeaves(node),
         });
         edges.push({ source: parentId, target: node.fullKey });
         currentId = node.fullKey;
       }
+
+      // A collapsed section still renders itself (with a leaf count) but
+      // contributes no rows for its subtree.
+      if (collapsed) return;
 
       for (const child of node.children.values()) {
         visit(child, depth + 1, currentId);
@@ -213,12 +230,56 @@ function createTree(container) {
     return { nodes, edges };
   }
 
-  function setData(treeRoot) {
-    const { nodes, edges } = computeLayout(treeRoot);
-    layoutNodes = nodes;
-    layoutEdges = edges;
-    rebuildAdjacency();
+  function collectSectionIds(node, out) {
+    if (!node.isLeaf && node.fullKey) out.push(node.fullKey);
+    for (const child of node.children.values()) collectSectionIds(child, out);
+    return out;
+  }
+
+  /**
+   * The tree opens as a coverage map: every section collapsed, so the
+   * first thing a returning user sees is the handful of top-level sections
+   * (readable at 100%) instead of a fitted-to-nothing sliver of 250 rows.
+   */
+  function applyDefaultCollapse() {
+    collapsedIds = new Set(lastRoot ? collectSectionIds(lastRoot, []) : []);
+  }
+
+  function relayout() {
+    if (lastRoot) {
+      const { nodes, edges } = computeLayout(lastRoot);
+      layoutNodes = nodes;
+      layoutEdges = edges;
+      rebuildAdjacency();
+    }
     render();
+  }
+
+  function setData(treeRoot, resetCollapsed) {
+    const isFirstLoad = lastRoot === null;
+    lastRoot = treeRoot;
+    if (resetCollapsed || isFirstLoad) applyDefaultCollapse();
+    relayout();
+  }
+
+  function toggleCollapse(id) {
+    if (collapsedIds.has(id)) collapsedIds.delete(id);
+    else collapsedIds.add(id);
+    relayout();
+  }
+
+  function expandAll() {
+    collapsedIds.clear();
+    relayout();
+  }
+
+  function collapseAll() {
+    applyDefaultCollapse();
+    relayout();
+  }
+
+  function hasCollapsed() {
+    return collapsedIds.size > 0;
   }
 
   function rebuildAdjacency() {
@@ -331,6 +392,17 @@ function createTree(container) {
       if (n.statusInherited) g.classList.add('tree-node--inherited');
       g.appendChild(circle);
 
+      // Sections carry a +/- glyph inside the circle: the visible cue that
+      // clicking them expands/collapses (it also opens the detail panel).
+      if (!n.isLeaf) {
+        const toggleGlyph = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        toggleGlyph.setAttribute('class', 'tree-node-toggle');
+        toggleGlyph.setAttribute('text-anchor', 'middle');
+        toggleGlyph.setAttribute('y', 3.5);
+        toggleGlyph.textContent = n.collapsed ? '+' : '−';
+        g.appendChild(toggleGlyph);
+      }
+
       const memberGroups = groupsForNodeFn ? groupsForNodeFn(n.id) : [];
       memberGroups.forEach((grp, gi) => {
         const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
@@ -346,7 +418,17 @@ function createTree(container) {
       if (n.isLeaf) {
         label.textContent = `${truncateTreeLabel(n.name, 22)} = ${truncateTreeLabel(n.value, 16)}`;
       } else {
-        label.textContent = n.name;
+        // Collapsed sections show how many fields are folded away.
+        label.textContent = n.collapsed ? `${n.name} (${n.leafCount})` : n.name;
+      }
+      // Your note rides next to the vendor's opaque name: the names are the
+      // problem this tool exists to solve, so the meaning gets equal billing.
+      const nodeInfo = infoForNodeFn ? infoForNodeFn(n.id) : null;
+      if (nodeInfo && nodeInfo.description) {
+        const desc = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+        desc.setAttribute('class', 'tree-node-desc');
+        desc.textContent = ` — ${truncateTreeLabel(nodeInfo.description, 34)}`;
+        label.appendChild(desc);
       }
       label.setAttribute('y', 4);
       if (labelSide === 'left') {
@@ -359,6 +441,11 @@ function createTree(container) {
       g.appendChild(label);
 
       g.addEventListener('click', () => {
+        // One click does both jobs for a section: toggle its subtree AND
+        // show its details. The detail panel is a passive side panel, so
+        // opening it alongside the toggle costs nothing, and it keeps
+        // status-marking of sections (a core workflow) one click away.
+        if (!n.isLeaf) toggleCollapse(n.id);
         if (onNodeClick) onNodeClick(n.id, n.isLeaf, n.value);
       });
 
@@ -631,7 +718,16 @@ function createTree(container) {
     setGroupsChecker(fn) { groupsForNodeFn = fn; render(); },
     setInfoProvider(fn) { infoForNodeFn = fn; },
     setStatusProvider(fn) { statusForKeyFn = fn; },
-    setFocusUseful(enabled) { focusUseful = Boolean(enabled); render(); },
+    setFocusUseful(enabled) {
+      focusUseful = Boolean(enabled);
+      // Focus mode presents the whole file's Useful keys and callouts;
+      // collapsed sections would hide most of them, so expand first.
+      if (focusUseful && collapsedIds.size > 0) collapsedIds.clear();
+      relayout();
+    },
+    expandAll,
+    collapseAll,
+    hasCollapsed,
     resetView() { viewX = 0; viewY = 0; viewScale = 1; applyViewBox(); },
     fitToView,
   };

@@ -31,17 +31,16 @@ pwsh ./server.ps1 -Port 8081 -PrefsDir "C:\path\to\your\configs"
    click **Scan** to list `.pref` files found there, then **Load**.
 2. **Upload** — or use the file picker to load a `.pref` file directly from
    your browser without relying on the server's folder scan.
-3. **Table view** — every key/value pair, with status, tags, and descriptions
-   for fields currently marked Useful.
+3. **Table view** — every key/value pair, with status, tags, and descriptions.
    Click a row to open the detail panel.
 4. **Graph view** — same data as a zoomable/pannable node graph. Dotted key
    segments (`hi.bye.field` → `hi` → `bye` → `field`) become parent/child
    nodes. Drag nodes, scroll to zoom, drag the background to pan. Nodes with
    a useful saved description get a highlighted ring.
 5. **Annotate** — click any key (table row or graph node), write a
-   description and comma-separated tags, click **Save annotation**. Descriptions
-   are preserved even when a key is marked **Not interested**, but hidden from
-   passive table/graph/tree browsing until the key is Useful again.
+   description and comma-separated tags, click **Save annotation**. Description
+   text is always visible and searchable (this is the tool's memory); the
+   highlight ring and focus-mode callouts appear only once the key is Useful.
 6. **Group related fields** — use the "Groups" bar above the table to create
    a named group (e.g. "Network Connection"), then open any field's detail
    panel and check the group to add it. Groups are cross-cutting: fields
@@ -50,7 +49,7 @@ pwsh ./server.ps1 -Port 8081 -PrefsDir "C:\path\to\your\configs"
    show a colored dot in the table's Groups column, and a dashed colored
    line connects them in the graph view regardless of tree distance. Use the
    **Group** dropdown in the toolbar to filter the table down to one group.
-7. **Search** — filters by key, value, useful visible description, or tag across
+7. **Search** — filters by key, value, description, or tag across
    whichever view/table is active.
 8. **Focus useful** — use the toolbar button to dim **Not interested** keys in
    table, graph, and tree views while keeping them visible and clickable. The

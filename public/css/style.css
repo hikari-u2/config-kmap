@@ -583,6 +583,25 @@ tbody td {
 .tree-node--focused text { fill: var(--focus-ring); font-weight: 600; }
 .tree-node--inherited circle { fill-opacity: 0.55; }
 
+/* Expand/collapse glyph inside section circles. Dark text works on the
+   gold/green/red circle fills in both themes (same reasoning as chips). */
+.tree-node-toggle {
+  fill: #15130a;
+  font-size: 12px;
+  font-weight: 700;
+  pointer-events: none;
+}
+/* The annotation note shown after a node's name: readable but clearly
+   secondary to the key itself. */
+.tree-node-desc {
+  fill: var(--text-dim);
+  font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 10px;
+}
+.tree-node--focused .tree-node-desc { fill: var(--focus-ring); }
+
+.tree-expand-btn { right: 112px; }
+
 /* Description callouts are sticky notes: deliberately the same yellow in
    both themes, like a physical note. */
 #tree-callout-arrowhead path { fill: #d8b93e; }

@@ -64,6 +64,7 @@
     fitViewBtn: document.getElementById('fit-view-btn'),
     graphLegend: document.getElementById('graph-legend'),
     treeFitViewBtn: document.getElementById('tree-fit-view-btn'),
+    treeExpandAllBtn: document.getElementById('tree-expand-all-btn'),
   };
 
   const graph = window.KMapGraph.createGraph(el.graphView);
@@ -77,7 +78,7 @@
     const ann = state.annotations[key];
     return {
       value: entry ? entry.value : '',
-      description: visibleDescriptionForKey(key),
+      description: descriptionForKey(key),
       tags: ann ? ann.tags : [],
     };
   });
@@ -85,6 +86,7 @@
 
   const tree = window.KMapTree.createTree(el.treeView);
   tree.onNodeClick(async (key, isLeaf, value) => {
+    updateTreeExpandBtn(); // section clicks toggle collapse state
     await showDetail(key, isLeaf, value);
   });
   tree.setAnnotationChecker((key) => hasUsefulDescription(key));
@@ -94,7 +96,7 @@
     const ann = state.annotations[key];
     return {
       value: entry ? entry.value : '',
-      description: visibleDescriptionForKey(key),
+      description: descriptionForKey(key),
       tags: ann ? ann.tags : [],
     };
   });
@@ -129,13 +131,17 @@
     return effectiveStatusForKey(key).status === 'useless';
   }
 
+  // Description text is always visible and searchable (this is a memory
+  // tool - a note you can't find is a note you never wrote). Only the
+  // *highlights* (graph rings, focus-mode callouts) are gated on Useful.
   function hasUsefulDescription(key) {
     const ann = state.annotations[key];
     return Boolean(ann && ann.description && isEffectivelyUseful(key));
   }
 
-  function visibleDescriptionForKey(key) {
-    return hasUsefulDescription(key) ? state.annotations[key].description : '';
+  function descriptionForKey(key) {
+    const ann = state.annotations[key];
+    return ann && ann.description ? ann.description : '';
   }
 
   function groupsForKey(key) {
@@ -218,15 +224,30 @@
     updateAnnotatedCount();
   }
 
+  /**
+   * True if the key's own annotation, or any ancestor section's annotation,
+   * contains the filter text. Notes are often written on the section
+   * ("cache - vendor said: map tiles"), and its fields are what the table
+   * shows - searching the note must surface those fields.
+   */
+  function annotationMatches(key, f) {
+    const parts = key.split('.');
+    for (let i = parts.length; i >= 1; i--) {
+      const ann = state.annotations[parts.slice(0, i).join('.')];
+      if (!ann) continue;
+      if (ann.description && ann.description.toLowerCase().includes(f)) return true;
+      if (ann.tags && ann.tags.some((t) => t.toLowerCase().includes(f))) return true;
+    }
+    return false;
+  }
+
   function matchesFilter(key, value, filter) {
     if (filter) {
       const f = filter.toLowerCase();
-      const ann = state.annotations[key];
       const textMatch =
         key.toLowerCase().includes(f) ||
         value.toLowerCase().includes(f) ||
-        (hasUsefulDescription(key) && ann.description.toLowerCase().includes(f)) ||
-        (ann && ann.tags && ann.tags.some((t) => t.toLowerCase().includes(f)));
+        annotationMatches(key, f);
       if (!textMatch) return false;
     }
     if (state.groupFilter) {
@@ -291,7 +312,7 @@
       const descTd = document.createElement('td');
       descTd.className = 'cell-description';
       const ann = state.annotations[entry.key];
-      descTd.textContent = visibleDescriptionForKey(entry.key);
+      descTd.textContent = descriptionForKey(entry.key);
       if (!descTd.textContent) descTd.classList.add('cell-description--empty');
 
       const tagsTd = document.createElement('td');
@@ -334,10 +355,17 @@
     setTimeout(() => graph.fitToView(), 400);
   }
 
+  function updateTreeExpandBtn() {
+    el.treeExpandAllBtn.textContent = tree.hasCollapsed() ? 'Expand all' : 'Collapse all';
+  }
+
   function renderTree(resetView) {
     if (!state.tree) return;
-    tree.setData(state.tree);
+    // resetView marks a fresh file load: also reset sections to the
+    // collapsed-by-default coverage map.
+    tree.setData(state.tree, resetView);
     tree.setFocusUseful(state.focusUseful);
+    updateTreeExpandBtn();
     // Only snap the viewport to fit the whole tree on the initial load of
     // a file. Re-rendering after a status change (setStatusForActiveKey
     // calls this to recolor nodes) should leave pan/zoom exactly where
@@ -436,10 +464,10 @@
   function updateDescriptionVisibilityNote(key) {
     const ann = state.annotations[key] || {};
     const hasDescription = Boolean(ann.description);
-    const hiddenByStatus = hasDescription && !isEffectivelyUseful(key);
-    if (hiddenByStatus) {
+    const notHighlighted = hasDescription && !isEffectivelyUseful(key);
+    if (notHighlighted) {
       el.detailDescriptionVisibility.textContent =
-        'Hidden in table, search, graph, and tree until this key is Useful.';
+        'Always visible and searchable; gets the highlight ring and focus-mode callout once this key is Useful.';
       el.detailDescriptionVisibility.classList.remove('hidden');
     } else {
       el.detailDescriptionVisibility.classList.add('hidden');
@@ -626,6 +654,7 @@
     renderTable();
     graph.setFocusUseful(state.focusUseful);
     tree.setFocusUseful(state.focusUseful);
+    updateTreeExpandBtn();
     renderGraphLegend();
     if (state.focusUseful && state.view === 'tree') setTimeout(() => tree.fitToView(), 0);
     setStatus(state.focusUseful ? 'Focusing Useful keys. Not interested keys are dimmed.' : 'Showing all keys at normal emphasis.');
@@ -727,6 +756,12 @@
   el.newGroupBtn.addEventListener('click', addNewGroup);
   el.fitViewBtn.addEventListener('click', () => graph.fitToView());
   el.treeFitViewBtn.addEventListener('click', () => tree.fitToView());
+  el.treeExpandAllBtn.addEventListener('click', () => {
+    if (tree.hasCollapsed()) tree.expandAll();
+    else tree.collapseAll();
+    updateTreeExpandBtn();
+    tree.fitToView();
+  });
   for (const btn of el.detailStatus.querySelectorAll('.status-btn')) {
     btn.addEventListener('click', () => setStatusForActiveKey(btn.dataset.status));
   }
