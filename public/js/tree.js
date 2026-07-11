@@ -11,6 +11,11 @@
  * This gives an at-a-glance triage view: fields you've marked uninteresting
  * cluster on the left, fields you care about cluster on the right, and the
  * center keeps the dotted-key hierarchy readable top-to-bottom.
+ *
+ * Vertically, rows are banded by status: Useful subtrees sort first at
+ * every level, unset in the middle, and whole Not-interested subtrees are
+ * pulled out of the hierarchy into a "ruled out" band at the bottom
+ * (full-path labels preserve their original context).
  */
 
 function truncateTreeLabel(text, max) {
@@ -171,7 +176,14 @@ function createTree(container) {
       return sum;
     }
 
-    function visit(node, depth, parentId) {
+    // Not-interested subtrees are pulled out of the hierarchy entirely and
+    // re-planted in a "ruled out" band at the very bottom, so the global
+    // color banding holds: green at the top, gold in the middle, red last.
+    // Pulled roots are labeled with their full dotted path (the label
+    // carries the lost parent context; no long connector edges).
+    const ruledOut = [];
+
+    function visit(node, depth, parentId, inRedZone) {
       const isSynthRoot = node.fullKey === '' || node.fullKey == null;
       let currentId = parentId;
       let collapsed = false;
@@ -210,8 +222,9 @@ function createTree(container) {
           statusInherited: eff.inherited,
           collapsed,
           leafCount: node.isLeaf ? 0 : countLeaves(node),
+          pulled: inRedZone && parentId === null,
         });
-        edges.push({ source: parentId, target: node.fullKey });
+        if (parentId) edges.push({ source: parentId, target: node.fullKey });
         currentId = node.fullKey;
       }
 
@@ -220,19 +233,28 @@ function createTree(container) {
       if (collapsed) return;
 
       // Rows are status-sorted at every level: Useful (green) first, unset
-      // (gold) in the middle, Not interested (red) last - so the top of the
-      // tree is what matters and the bottom is what's been ruled out.
-      // The sort is stable, so file order is kept within each band.
+      // (gold) after - so the top of the tree is what matters. The sort is
+      // stable, so file order is kept within each band. Not-interested
+      // children leave the hierarchy for the ruled-out band instead (except
+      // inside that band itself, where they simply sort last).
       const statusRank = { useful: 0, '': 1, useless: 2 };
       const kids = [...node.children.values()].sort(
         (a, b) => statusRank[statusOf(a.fullKey).status] - statusRank[statusOf(b.fullKey).status]
       );
       for (const child of kids) {
-        visit(child, depth + 1, currentId);
+        if (!inRedZone && statusOf(child.fullKey).status === 'useless') {
+          ruledOut.push(child);
+          continue;
+        }
+        visit(child, depth + 1, currentId, inRedZone);
       }
     }
 
-    visit(root, 0, '__root__');
+    visit(root, 0, '__root__', false);
+    if (ruledOut.length > 0) {
+      rowIndex++; // one blank row separates the live tree from the band
+      for (const sub of ruledOut) visit(sub, 1, null, true);
+    }
     nodes.unshift({ id: '__root__', name: '', isLeaf: false, depth: 0, x: centerX, y: 8, status: null });
 
     return { nodes, edges };
@@ -423,11 +445,14 @@ function createTree(container) {
 
       const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
       const labelSide = n.isLeaf ? (n.status === 'useless' ? 'left' : 'right') : 'right';
+      // Roots pulled into the ruled-out band show their full dotted path -
+      // the label is all that carries their original position in the tree.
+      const displayName = n.pulled ? truncateTreeLabel(n.id, 40) : truncateTreeLabel(n.name, 22);
       if (n.isLeaf) {
-        label.textContent = `${truncateTreeLabel(n.name, 22)} = ${truncateTreeLabel(n.value, 16)}`;
+        label.textContent = `${displayName} = ${truncateTreeLabel(n.value, 16)}`;
       } else {
         // Collapsed sections show how many fields are folded away.
-        label.textContent = n.collapsed ? `${n.name} (${n.leafCount})` : n.name;
+        label.textContent = n.collapsed ? `${displayName} (${n.leafCount})` : displayName;
       }
       // Your note rides next to the vendor's opaque name: the names are the
       // problem this tool exists to solve, so the meaning gets equal billing.
