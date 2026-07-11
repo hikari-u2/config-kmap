@@ -4,6 +4,18 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Config Knowledge Map</title>
+  <script>
+    // Set the theme before the stylesheet paints to avoid a flash of the
+    // wrong theme. Saved choice wins; otherwise follow the OS setting.
+    (function () {
+      let saved = null;
+      try { saved = localStorage.getItem('ckm-theme'); } catch (e) { /* ignore */ }
+      const theme = saved === 'light' || saved === 'dark'
+        ? saved
+        : (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+      document.documentElement.setAttribute('data-theme', theme);
+    })();
+  </script>
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
@@ -11,71 +23,93 @@
     <h1>Config Knowledge Map</h1>
     <span id="current-file-label" class="current-file-label">No file loaded</span>
     <div class="header-right">
-      <div class="ai-badge" aria-label="AI development usage">
-        <svg class="ai-badge-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <circle cx="12" cy="5" r="2.3" />
-          <circle cx="5" cy="18" r="2.3" />
-          <circle cx="19" cy="18" r="2.3" />
-          <path d="M12 7.3 6.7 15.8M12 7.3l5.3 8.5M7.5 18h9" />
-        </svg>
-        <span class="ai-badge-copy">
-          <span>AI-assisted Build</span>
-          <em>Made with Ona &middot; Claude Sonnet 5</em>
-          <small>Design, implementation &amp; docs</small>
-        </span>
-      </div>
       <span id="annotated-count" class="annotated-count"></span>
+      <div class="popover-host">
+        <button id="open-menu-btn" type="button" aria-haspopup="true" aria-expanded="false">Open <span class="caret">&#9662;</span></button>
+        <div id="open-menu" class="popover hidden">
+          <div class="popover-row">
+            <label for="dir-input">Scan a folder for .pref files</label>
+            <div class="popover-controls">
+              <input id="dir-input" type="text" placeholder="./prefs (default)" />
+              <button id="scan-btn" type="button">Scan</button>
+            </div>
+          </div>
+          <div class="popover-row">
+            <label for="file-select">Files found</label>
+            <div class="popover-controls">
+              <select id="file-select"></select>
+              <button id="load-selected-btn" type="button" class="btn-primary">Load</button>
+            </div>
+          </div>
+          <div class="popover-row">
+            <label for="file-upload">Or use a file from this computer</label>
+            <button id="upload-btn" type="button">Upload .pref file&#8230;</button>
+            <input id="file-upload" type="file" accept=".pref,.properties,.txt" class="visually-hidden" />
+          </div>
+        </div>
+      </div>
+      <button id="theme-toggle-btn" class="theme-toggle" type="button" title="Switch theme" aria-label="Switch theme">
+        <svg class="theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="4.2" />
+          <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1" />
+        </svg>
+        <svg class="theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5Z" />
+        </svg>
+      </button>
     </div>
   </header>
 
   <section class="toolbar">
-    <div class="toolbar-group">
-      <label for="dir-input">Folder</label>
-      <input id="dir-input" type="text" placeholder="./prefs (default)" />
-      <button id="scan-btn">Scan</button>
+    <div class="search-wrap">
+      <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="10.5" cy="10.5" r="6" />
+        <path d="M15 15l5.5 5.5" />
+      </svg>
+      <input id="search-input" type="text" placeholder="Search keys, values, descriptions, tags&#8230;" aria-label="Search" />
     </div>
 
-    <div class="toolbar-group">
-      <label for="file-select">.pref files</label>
-      <select id="file-select"></select>
-      <button id="load-selected-btn">Load</button>
+    <select id="group-filter-select" aria-label="Filter by group">
+      <option value="">All groups</option>
+    </select>
+
+    <div class="popover-host">
+      <button id="group-popover-btn" type="button" aria-haspopup="true" aria-expanded="false">+ Group</button>
+      <div id="group-popover" class="popover popover--under-left hidden">
+        <div class="popover-row">
+          <label for="new-group-name">New group</label>
+          <div class="popover-controls">
+            <input id="new-group-name" type="text" placeholder="e.g. Network Connection" />
+            <button id="new-group-btn" type="button" class="btn-primary">Create</button>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <div class="toolbar-group">
-      <label for="file-upload">Or upload</label>
-      <input id="file-upload" type="file" accept=".pref,.properties,.txt" />
-    </div>
+    <button id="focus-useful-btn" class="toggle-pill" type="button" aria-pressed="false" title="Dim Not interested keys while keeping them clickable">
+      <span class="toggle-dot" aria-hidden="true"></span>Focus useful
+    </button>
 
-    <div class="toolbar-group toolbar-group--search">
-      <label for="search-input">Search</label>
-      <input id="search-input" type="text" placeholder="Filter by key, value, description, tag..." />
-    </div>
-
-    <div class="toolbar-group toolbar-group--group-filter">
-      <label for="group-filter-select">Group</label>
-      <select id="group-filter-select">
-        <option value="">All fields</option>
-      </select>
-    </div>
-
-    <div class="toolbar-group toolbar-group--views">
-      <button id="focus-useful-btn" class="view-btn" type="button" aria-pressed="false" title="Dim Not interested keys while keeping them clickable">Focus useful</button>
-      <button id="view-table-btn" class="view-btn">Table</button>
-      <button id="view-graph-btn" class="view-btn">Graph</button>
-      <button id="view-tree-btn" class="view-btn">Tree</button>
+    <div class="segment" role="group" aria-label="View">
+      <button id="view-table-btn" type="button">Table</button>
+      <button id="view-graph-btn" type="button">Graph</button>
+      <button id="view-tree-btn" type="button">Tree</button>
     </div>
   </section>
 
-  <section id="groups-bar" class="groups-bar">
-    <span class="groups-bar-label">Groups:</span>
+  <section id="groups-bar" class="groups-bar hidden">
+    <span class="groups-bar-label">Groups</span>
     <span id="groups-chips" class="groups-chips"></span>
-    <input id="new-group-name" type="text" placeholder="New group name (e.g. Network Connection)" />
-    <button id="new-group-btn">+ Add group</button>
   </section>
 
   <main class="main-layout">
     <div id="focus-mode-banner" class="focus-mode-banner hidden">Focus useful mode</div>
     <div id="table-view" class="table-view">
+      <div id="empty-state" class="empty-state hidden">
+        <p class="empty-state-title">No file loaded</p>
+        <p id="empty-state-hint" class="empty-state-hint">Scan a folder or upload a .pref file from Open.</p>
+        <button id="empty-load-btn" type="button" class="btn-primary hidden">Load</button>
+      </div>
       <table>
         <thead>
           <tr>
@@ -99,21 +133,21 @@
     <div id="tree-view" class="tree-view hidden">
       <button id="tree-fit-view-btn" class="graph-fit-btn">Fit to view</button>
       <div id="tree-legend" class="graph-legend">
-        <div class="graph-legend-row"><span class="graph-legend-swatch" style="background:#eb5757"></span> Not interested (left)</div>
-        <div class="graph-legend-row"><span class="graph-legend-swatch" style="background:#6fcf97"></span> Useful (right)</div>
-        <div class="graph-legend-row"><span class="graph-legend-swatch" style="background:#9aa1ad"></span> Unset</div>
-        <div class="graph-legend-row"><span class="graph-legend-swatch" style="background:#6fcf97;opacity:0.5"></span> Inherited from parent</div>
-        <div class="graph-legend-row"><span class="graph-legend-swatch" style="background:transparent;border:2px solid #5aa9e6;box-sizing:border-box"></span> Useful description</div>
-        <div class="graph-legend-row"><span class="graph-legend-swatch" style="background:#555b66"></span> Focus dims Not interested</div>
+        <div class="graph-legend-row"><span class="graph-legend-swatch" style="background:var(--error)"></span> Not interested (left)</div>
+        <div class="graph-legend-row"><span class="graph-legend-swatch" style="background:var(--leaf)"></span> Useful (right)</div>
+        <div class="graph-legend-row"><span class="graph-legend-swatch" style="background:var(--text-dim)"></span> Unset</div>
+        <div class="graph-legend-row"><span class="graph-legend-swatch" style="background:var(--leaf);opacity:0.5"></span> Inherited from parent</div>
+        <div class="graph-legend-row"><span class="graph-legend-swatch" style="background:transparent;border:2px solid var(--accent);box-sizing:border-box"></span> Useful description</div>
+        <div class="graph-legend-row"><span class="graph-legend-swatch" style="background:var(--dim-neutral)"></span> Focus dims Not interested</div>
         <div class="graph-legend-row"><span class="graph-legend-line" style="border-color:#d8b93e"></span> Focus description note</div>
       </div>
     </div>
 
     <aside id="detail-panel" class="detail-panel hidden">
-      <h2 id="detail-key">—</h2>
+      <h2 id="detail-key">&#8212;</h2>
       <div class="detail-row">
         <span class="detail-label">Value</span>
-        <span id="detail-value" class="detail-value">—</span>
+        <span id="detail-value" class="detail-value">&#8212;</span>
       </div>
       <div class="detail-row">
         <label for="detail-description">Description</label>
@@ -138,11 +172,14 @@
         <label>Groups</label>
         <div id="detail-groups" class="detail-groups"></div>
       </div>
-      <button id="save-annotation-btn">Save annotation</button>
+      <button id="save-annotation-btn" class="btn-primary">Save annotation</button>
     </aside>
   </main>
 
-  <footer id="status-bar" class="status-bar">Ready.</footer>
+  <footer id="status-bar" class="status-bar">
+    <span id="status-text">Ready.</span>
+    <span class="credit">AI-assisted build &middot; Ona &middot; Claude Sonnet 5</span>
+  </footer>
 
   <script src="js/parser.js"></script>
   <script src="js/annotations.js"></script>

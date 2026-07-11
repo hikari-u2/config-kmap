@@ -1,4 +1,10 @@
-:root {
+/* Theme tokens. The dark palette is the original design; the light palette
+   keeps the same cool-slate hue family so the tool reads as itself in both.
+   `data-theme` on <html> is set before first paint (see index.html) and
+   toggled from the header button. */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
   --bg: #14161a;
   --panel: #1c1f26;
   --panel-alt: #23272f;
@@ -9,7 +15,46 @@
   --accent-dim: #2c4a63;
   --leaf: #6fcf97;
   --section: #f2c94c;
+  --section-text: #f2c94c; /* --section used as text; darker in light theme */
   --error: #eb5757;
+  --on-accent: #08131c;    /* text on accent/status-colored surfaces */
+  --node-stroke: rgba(0, 0, 0, 0.6);
+  --focus-ring: #ffffff;   /* focused node outline + label */
+  --dim-neutral: #555b66;  /* focus mode: dimmed edges/nodes */
+  --tooltip-bg: #0d0f13;
+  --legend-bg: rgba(28, 31, 38, 0.9);
+  --shadow: rgba(0, 0, 0, 0.4);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #eef0f4;
+  --panel: #f9fafc;
+  --panel-alt: #e3e7ee;
+  --border: #c7ceda;
+  --text: #1e242e;
+  --text-dim: #5a6474;
+  --accent: #1f6fb2;
+  --accent-dim: #d2e4f4;
+  --leaf: #2f9e63;
+  --section: #e2ab14;
+  --section-text: #8a6a08;
+  --error: #d24040;
+  --on-accent: #ffffff;
+  --node-stroke: rgba(0, 0, 0, 0.4);
+  --focus-ring: #14161a;
+  --dim-neutral: #b6bdc9;
+  --tooltip-bg: #ffffff;
+  --legend-bg: rgba(249, 250, 252, 0.92);
+  --shadow: rgba(30, 40, 60, 0.22);
+}
+
+:root {
+  /* The tool's world is dotted config keys: monospace is the brand voice.
+     One radius and one control height keep the chrome quiet. */
+  --mono: "Cascadia Code", "Cascadia Mono", "SF Mono", Consolas, monospace;
+  --radius: 6px;
+  --ctrl-h: 30px;
 }
 
 * { box-sizing: border-box; }
@@ -24,114 +69,229 @@ body {
   flex-direction: column;
 }
 
-.app-header {
-  display: flex;
-  align-items: baseline;
-  gap: 1rem;
-  padding: 0.75rem 1rem;
-  background: var(--panel);
-  border-bottom: 1px solid var(--border);
-}
-.app-header h1 { font-size: 1.1rem; margin: 0; }
-.current-file-label { color: var(--text-dim); font-size: 0.85rem; }
-.header-right { margin-left: auto; display: flex; align-items: center; gap: 0.9rem; }
-.annotated-count { color: var(--accent); font-size: 0.85rem; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-.ai-badge {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.3rem 0.6rem;
-  border: 1px solid var(--accent-dim);
-  border-radius: 6px;
-  background: var(--panel-alt);
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
-.ai-badge-icon {
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: 1.4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.ai-badge-icon circle { fill: var(--accent); stroke: none; }
-.ai-badge-copy {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.25;
-}
-.ai-badge-copy span {
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: var(--text);
-}
-.ai-badge-copy em,
-.ai-badge-copy small {
-  font-style: normal;
-  font-size: 0.65rem;
-  color: var(--text-dim);
-}
-.ai-badge-copy em { color: var(--accent); }
 
-.toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
-  padding: 0.6rem 1rem;
-  background: var(--panel-alt);
-  border-bottom: 1px solid var(--border);
-  align-items: end;
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
 }
-.toolbar-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  font-size: 0.75rem;
-  color: var(--text-dim);
-}
-.toolbar-group--search { flex: 1; min-width: 200px; }
-.toolbar-group--views { flex-direction: row; align-self: flex-end; }
+
+/* ---------------------------------------------------------------- controls
+   Quiet by default: controls separate from the surface by background shade,
+   not outlines. The filled accent is reserved for the active view and
+   primary actions (.btn-primary). */
 
 input, select, textarea, button {
   font-family: inherit;
-  font-size: 0.85rem;
+  font-size: 0.83rem;
   background: var(--panel);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 0.4rem 0.5rem;
+  border-radius: var(--radius);
 }
-input[type="text"], select, textarea { min-width: 180px; }
-.toolbar-group--search input { width: 100%; min-width: 240px; }
+input[type="text"], select { height: var(--ctrl-h); padding: 0 0.55rem; }
+textarea { padding: 0.4rem 0.55rem; }
+input::placeholder, textarea::placeholder { color: var(--text-dim); opacity: 0.75; }
 
 button {
   cursor: pointer;
-  background: var(--accent-dim);
-  border-color: var(--accent);
+  height: var(--ctrl-h);
+  padding: 0 0.7rem;
+  background: var(--panel-alt);
+  border-color: transparent;
+  white-space: nowrap;
 }
-button:hover { background: var(--accent); color: #08131c; }
-button.active { background: var(--accent); color: #08131c; }
-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
+button:hover { background: var(--accent-dim); }
+button.active { background: var(--accent); color: var(--on-accent); }
+button:disabled { cursor: not-allowed; opacity: 0.55; }
+button:disabled:hover { background: var(--panel-alt); }
+
+.btn-primary { background: var(--accent); color: var(--on-accent); }
+.btn-primary:hover { background: var(--accent); opacity: 0.88; }
+
+/* ---------------------------------------------------------------- header */
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.55rem 1rem;
+  background: var(--panel);
 }
-button:disabled:hover {
-  background: var(--accent-dim);
+.app-header h1 {
+  font-family: var(--mono);
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0;
+  white-space: nowrap;
+}
+.current-file-label {
+  font-family: var(--mono);
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.header-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-shrink: 0;
+}
+.annotated-count {
+  font-family: var(--mono);
+  color: var(--accent);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+.caret { font-size: 0.7em; opacity: 0.7; }
+
+.theme-toggle {
+  width: var(--ctrl-h);
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+}
+.theme-toggle svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* Icon shows the theme the button switches TO; only one is visible. */
+:root[data-theme="light"] .theme-toggle .theme-icon-sun { display: none; }
+:root:not([data-theme="light"]) .theme-toggle .theme-icon-moon { display: none; }
+
+/* -------------------------------------------------------------- popovers */
+
+.popover-host { position: relative; }
+.popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  width: 320px;
+  max-width: calc(100vw - 2rem);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  box-shadow: 0 8px 24px var(--shadow);
+}
+.popover.hidden { display: none; }
+.popover--under-left { left: 0; right: auto; }
+.popover-row { display: flex; flex-direction: column; gap: 0.3rem; }
+.popover-row label { font-size: 0.72rem; color: var(--text-dim); }
+.popover-controls { display: flex; gap: 0.4rem; }
+.popover-controls input,
+.popover-controls select { flex: 1; min-width: 0; }
+
+/* --------------------------------------------------------------- toolbar */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.45rem 1rem 0.6rem;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+.search-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 220px;
+}
+.search-icon {
+  position: absolute;
+  left: 0.55rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: var(--text-dim);
+  stroke-width: 2;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+.search-wrap input { width: 100%; padding-left: 1.85rem; }
+
+.toggle-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0 0.8rem;
+  border-radius: 999px;
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-dim);
+}
+.toggle-pill .toggle-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+.toggle-pill:hover { background: var(--panel-alt); }
+/* Active focus mode is gold: it matches the "Focus useful mode" banner and
+   the description callouts that appear in that mode. */
+.toggle-pill.active {
+  background: transparent;
+  border-color: var(--section);
   color: var(--text);
 }
+.toggle-pill.active .toggle-dot { background: var(--section); }
+
+.segment {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--panel-alt);
+  border-radius: var(--radius);
+}
+.segment button {
+  height: calc(var(--ctrl-h) - 4px);
+  padding: 0 0.65rem;
+  background: transparent;
+  color: var(--text-dim);
+  border-radius: calc(var(--radius) - 2px);
+}
+.segment button:hover { background: var(--accent-dim); color: var(--text); }
+.segment button.active { background: var(--accent); color: var(--on-accent); }
+
+/* ------------------------------------------------------------ groups bar */
 
 .groups-bar {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  padding: 0.5rem 1rem;
+  padding: 0.4rem 1rem;
   background: var(--panel-alt);
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
 }
-.groups-bar-label { font-size: 0.75rem; color: var(--text-dim); }
+.groups-bar.hidden { display: none; }
+.groups-bar-label { font-size: 0.72rem; color: var(--text-dim); }
 .groups-chips { display: flex; gap: 0.4rem; flex-wrap: wrap; }
 .group-chip {
   display: inline-flex;
@@ -140,7 +300,7 @@ button:disabled:hover {
   padding: 0.2rem 0.5rem;
   border-radius: 999px;
   font-size: 0.75rem;
-  color: #08131c;
+  color: #08131c; /* group palette colors are fixed data; dark text works on all */
   cursor: default;
 }
 .group-chip .group-chip-count { opacity: 0.75; font-size: 0.7rem; }
@@ -150,11 +310,11 @@ button:disabled:hover {
   background: transparent;
   color: #08131c;
   font-weight: bold;
+  height: auto;
   padding: 0 0.15rem;
   line-height: 1;
 }
-.group-chip .group-chip-delete:hover { opacity: 0.6; }
-#new-group-name { min-width: 220px; }
+.group-chip .group-chip-delete:hover { opacity: 0.6; background: transparent; }
 
 .detail-groups { display: flex; flex-direction: column; gap: 0.35rem; }
 .detail-group-option {
@@ -179,6 +339,8 @@ button:disabled:hover {
   display: inline-block;
 }
 
+/* ------------------------------------------------------------------ main */
+
 .main-layout {
   flex: 1;
   display: flex;
@@ -192,7 +354,7 @@ button:disabled:hover {
   z-index: 7;
   padding: 0.25rem 0.55rem;
   border: 1px solid #d8b93e;
-  border-radius: 4px;
+  border-radius: var(--radius);
   background: rgba(242, 212, 107, 0.95);
   color: #15130a;
   font-size: 0.72rem;
@@ -207,6 +369,8 @@ button:disabled:hover {
   box-shadow: inset 0 0 0 1px rgba(242, 201, 76, 0.24);
 }
 
+/* ----------------------------------------------------------------- table */
+
 .table-view {
   flex: 1;
   overflow-x: auto;
@@ -214,6 +378,25 @@ button:disabled:hover {
   padding: 0.5rem 1rem;
 }
 .table-view.hidden { display: none; }
+.table-view--empty table { display: none; }
+
+.empty-state {
+  max-width: 900px;
+  margin: 16vh auto 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: center;
+}
+.empty-state.hidden { display: none; }
+.empty-state-title {
+  font-family: var(--mono);
+  font-size: 1rem;
+  margin: 0;
+}
+.empty-state-hint { color: var(--text-dim); font-size: 0.82rem; margin: 0; }
+.empty-state .btn-primary { margin-top: 0.5rem; }
 
 table { width: 100%; max-width: 900px; margin: 0 auto; border-collapse: collapse; font-size: 0.85rem; table-layout: auto; }
 thead th {
@@ -252,24 +435,26 @@ tbody td {
 }
 .cell-key {
   color: var(--accent);
-  font-family: "SF Mono", Consolas, monospace;
+  font-family: var(--mono);
   white-space: nowrap;
   overflow: visible;
   text-overflow: unset;
 }
-.cell-value { font-family: "SF Mono", Consolas, monospace; color: var(--text); }
+.cell-value { font-family: var(--mono); color: var(--text); }
 .status-badge {
   display: inline-block;
   padding: 0.05rem 0.45rem;
   border-radius: 999px;
   font-size: 0.72rem;
-  color: #08131c;
+  color: var(--on-accent);
 }
 .status-badge--useful { background: var(--leaf); }
-.status-badge--useless { background: var(--error); color: #1a0a0a; }
+.status-badge--useless { background: var(--error); }
 .status-badge--inherited { opacity: 0.55; }
-.cell-description--empty::after { content: "—"; color: var(--text-dim); }
-.cell-tags { color: var(--section); font-size: 0.78rem; }
+.cell-description--empty::after { content: "\2014"; color: var(--text-dim); }
+.cell-tags { color: var(--section-text); font-size: 0.78rem; }
+
+/* ----------------------------------------------------------------- graph */
 
 .graph-view {
   flex: 1;
@@ -279,53 +464,56 @@ tbody td {
 }
 .graph-view.hidden { display: none; }
 .graph-svg { width: 100%; height: 100%; cursor: grab; }
-.graph-edge { stroke: var(--border); stroke-width: 1; transition: opacity 0.1s; }
+/* No opacity transition on edges: hover flips toggle these classes on every
+   edge at once, and animating ~350 edges keeps the whole SVG repainting for
+   ~100ms after each flip - visible stutter when crossing nodes quickly. */
+.graph-edge { stroke: var(--border); stroke-width: 1; }
 .graph-edge--group { stroke-width: 2; stroke-dasharray: 4 3; opacity: 0.85; }
 .graph-edge--dimmed { opacity: 0.08; }
-.graph-edge--focus-dimmed { opacity: 0.12; stroke: #555b66; }
+.graph-edge--focus-dimmed { opacity: 0.12; stroke: var(--dim-neutral); }
 .graph-edge--focused { opacity: 1; stroke-width: 2; }
-.graph-node circle { fill: var(--section); stroke: #0009; stroke-width: 1; }
+.graph-node circle { fill: var(--section); stroke: var(--node-stroke); stroke-width: 1; }
 .graph-node--leaf circle { fill: var(--leaf); }
 .graph-node--annotated circle { stroke: var(--accent); stroke-width: 2.5; }
-.graph-node text { fill: var(--text); font-size: 11px; pointer-events: none; font-family: "SF Mono", Consolas, monospace; }
+.graph-node text { fill: var(--text); font-size: 11px; pointer-events: none; font-family: var(--mono); }
 .graph-node { cursor: pointer; }
 .graph-node--dimmed { opacity: 0.15; }
 .graph-node--focus-dimmed { opacity: 0.28; filter: grayscale(0.8); }
 .graph-node--focus-dimmed.graph-node--focused { opacity: 0.82; }
-.graph-node--focused circle { stroke: #fff; stroke-width: 2; }
-.graph-node--focused text { fill: #fff; font-weight: 600; }
+.graph-node--focused circle { stroke: var(--focus-ring); stroke-width: 2; }
+.graph-node--focused text { fill: var(--focus-ring); font-weight: 600; }
 .graph-node--inherited circle { fill-opacity: 0.55; }
 
 .graph-tooltip {
   position: absolute;
   pointer-events: none;
-  background: #0d0f13;
+  background: var(--tooltip-bg);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius);
   padding: 0.5rem 0.65rem;
   font-size: 0.75rem;
   max-width: 280px;
   z-index: 10;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 4px 12px var(--shadow);
 }
 .graph-tooltip.hidden { display: none; }
 .graph-tooltip .tooltip-key {
-  font-family: "SF Mono", Consolas, monospace;
+  font-family: var(--mono);
   color: var(--accent);
   font-weight: 600;
   margin-bottom: 0.2rem;
   word-break: break-all;
 }
 .graph-tooltip .tooltip-value {
-  font-family: "SF Mono", Consolas, monospace;
+  font-family: var(--mono);
   color: var(--text);
   margin-bottom: 0.25rem;
 }
 .graph-tooltip .tooltip-desc { color: var(--text); margin-bottom: 0.25rem; }
-.graph-tooltip .tooltip-tags { color: var(--section); margin-bottom: 0.25rem; }
+.graph-tooltip .tooltip-tags { color: var(--section-text); margin-bottom: 0.25rem; }
 .graph-tooltip .tooltip-groups { display: flex; gap: 0.3rem; flex-wrap: wrap; }
 .tooltip-group-chip {
-  color: #08131c;
+  color: #08131c; /* fixed group palette colors; see .group-chip */
   padding: 0.05rem 0.4rem;
   border-radius: 999px;
   font-size: 0.68rem;
@@ -335,9 +523,9 @@ tbody td {
   position: absolute;
   bottom: 12px;
   left: 12px;
-  background: rgba(28, 31, 38, 0.9);
+  background: var(--legend-bg);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius);
   padding: 0.5rem 0.7rem;
   font-size: 0.72rem;
   color: var(--text-dim);
@@ -355,7 +543,14 @@ tbody td {
   top: 12px;
   right: 12px;
   z-index: 5;
+  background: var(--legend-bg);
+  border-color: var(--border);
+  color: var(--text-dim);
+  font-size: 0.75rem;
 }
+.graph-fit-btn:hover { background: var(--accent-dim); color: var(--text); }
+
+/* ------------------------------------------------------------------ tree */
 
 .tree-view {
   flex: 1;
@@ -366,27 +561,30 @@ tbody td {
 .tree-view.hidden { display: none; }
 .tree-svg { width: 100%; height: 100%; cursor: grab; }
 
-.tree-edge { fill: none; stroke: var(--border); stroke-width: 1.5; transition: opacity 0.1s; }
+/* No opacity transition: same reasoning as .graph-edge above. */
+.tree-edge { fill: none; stroke: var(--border); stroke-width: 1.5; }
 .tree-edge--trunk { stroke: var(--border); }
 .tree-edge--useful { stroke: var(--leaf); opacity: 0.7; }
 .tree-edge--useless { stroke: var(--error); opacity: 0.7; }
 .tree-edge--unset { stroke: var(--text-dim); opacity: 0.45; }
 .tree-edge--dimmed { opacity: 0.06; }
-.tree-edge--focus-dimmed { opacity: 0.12; stroke: #555b66; }
+.tree-edge--focus-dimmed { opacity: 0.12; stroke: var(--dim-neutral); }
 .tree-edge--focused { opacity: 1; stroke-width: 2.2; }
 
-.tree-node circle { fill: var(--section); stroke: #0009; stroke-width: 1; }
-.tree-node--leaf circle { stroke: #0009; }
+.tree-node circle { fill: var(--section); stroke: var(--node-stroke); stroke-width: 1; }
+.tree-node--leaf circle { stroke: var(--node-stroke); }
 .tree-node--annotated circle { stroke: var(--accent); stroke-width: 2.5; }
-.tree-node text { fill: var(--text); font-size: 11px; pointer-events: none; font-family: "SF Mono", Consolas, monospace; }
+.tree-node text { fill: var(--text); font-size: 11px; pointer-events: none; font-family: var(--mono); }
 .tree-node { cursor: pointer; }
 .tree-node--dimmed { opacity: 0.15; }
 .tree-node--focus-dimmed { opacity: 0.28; filter: grayscale(0.8); }
 .tree-node--focus-dimmed.tree-node--focused { opacity: 0.82; }
-.tree-node--focused circle { stroke: #fff; stroke-width: 2; }
-.tree-node--focused text { fill: #fff; font-weight: 600; }
+.tree-node--focused circle { stroke: var(--focus-ring); stroke-width: 2; }
+.tree-node--focused text { fill: var(--focus-ring); font-weight: 600; }
 .tree-node--inherited circle { fill-opacity: 0.55; }
 
+/* Description callouts are sticky notes: deliberately the same yellow in
+   both themes, like a physical note. */
 #tree-callout-arrowhead path { fill: #d8b93e; }
 .tree-callout-arrow {
   fill: none;
@@ -403,7 +601,7 @@ tbody td {
   fill: #f2d46b;
   stroke: #d8b93e;
   stroke-width: 1;
-  filter: drop-shadow(0 3px 7px rgba(0, 0, 0, 0.35));
+  filter: drop-shadow(0 3px 7px var(--shadow));
 }
 .tree-callout-note text {
   fill: #15130a;
@@ -413,10 +611,10 @@ tbody td {
 .tree-callout-key {
   fill: #5d4c08 !important;
   font-size: 9px !important;
-  font-family: "SF Mono", Consolas, monospace;
+  font-family: var(--mono);
 }
 .tree-callout-note--focused rect {
-  stroke: #fff2a8;
+  stroke: var(--focus-ring);
   stroke-width: 2;
 }
 .tree-callout-note--dimmed,
@@ -434,11 +632,13 @@ tbody td {
   padding: 0.05rem 0.4rem;
   border-radius: 999px;
   font-size: 0.68rem;
-  color: #08131c;
+  color: var(--on-accent);
 }
 .tooltip-status--useful { background: var(--leaf); }
-.tooltip-status--useless { background: var(--error); color: #1a0a0a; }
-.tooltip-status--unset { background: var(--text-dim); color: #101216; }
+.tooltip-status--useless { background: var(--error); }
+.tooltip-status--unset { background: var(--text-dim); }
+
+/* ---------------------------------------------------------- detail panel */
 
 .detail-panel {
   width: 320px;
@@ -454,18 +654,18 @@ tbody td {
 .detail-panel h2 {
   margin: 0;
   font-size: 1rem;
-  font-family: "SF Mono", Consolas, monospace;
+  font-family: var(--mono);
   color: var(--accent);
   word-break: break-all;
 }
 .detail-row { display: flex; flex-direction: column; gap: 0.25rem; }
-.detail-row label { font-size: 0.75rem; color: var(--text-dim); }
+.detail-row label, .detail-row .detail-label { font-size: 0.75rem; color: var(--text-dim); }
 .detail-value {
-  font-family: "SF Mono", Consolas, monospace;
+  font-family: var(--mono);
   color: var(--text);
   background: var(--panel-alt);
   padding: 0.3rem 0.5rem;
-  border-radius: 4px;
+  border-radius: var(--radius);
 }
 #detail-description, #detail-tags { width: 100%; resize: vertical; }
 .detail-description-visibility {
@@ -475,7 +675,7 @@ tbody td {
 }
 .detail-description-visibility.hidden { display: none; }
 .detail-readonly-note {
-  color: var(--section);
+  color: var(--section-text);
   font-size: 0.72rem;
   line-height: 1.35;
 }
@@ -498,22 +698,40 @@ tbody td {
   flex: 1;
   font-size: 0.72rem;
   padding: 0.35rem 0.3rem;
+  height: auto;
   background: var(--panel-alt);
   border-color: var(--border);
   color: var(--text-dim);
 }
 .status-btn--useless { border-color: var(--error); }
-.status-btn--useless.active { background: var(--error); border-color: var(--error); color: #1a0a0a; }
+.status-btn--useless.active { background: var(--error); border-color: var(--error); color: var(--on-accent); }
 .status-btn--useful { border-color: var(--leaf); }
-.status-btn--useful.active { background: var(--leaf); border-color: var(--leaf); color: #06170f; }
-.status-btn--unset.active { background: var(--text-dim); border-color: var(--text-dim); color: #101216; }
+.status-btn--useful.active { background: var(--leaf); border-color: var(--leaf); color: var(--on-accent); }
+.status-btn--unset.active { background: var(--text-dim); border-color: var(--text-dim); color: var(--on-accent); }
 .status-btn:hover { opacity: 0.85; }
 
+/* ------------------------------------------------------------ status bar */
+
 .status-bar {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
   padding: 0.4rem 1rem;
   background: var(--panel);
   border-top: 1px solid var(--border);
   font-size: 0.78rem;
   color: var(--text-dim);
 }
+#status-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .status-error { color: var(--error); }
+.credit {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  opacity: 0.8;
+  white-space: nowrap;
+}

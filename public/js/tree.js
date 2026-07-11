@@ -89,8 +89,26 @@ function createTree(container) {
       isPanning = true;
       panStart = { x: e.clientX, y: e.clientY };
       viewStart = { x: viewX, y: viewY };
+      clearHover();
     }
   });
+
+  /**
+   * Drop any active hover highlight/tooltip. Called when a pan starts:
+   * while the view is being dragged, rows sweep under the stationary
+   * cursor (every 32px of vertical pan crosses one in this layout) and
+   * fire mouseenter/mouseleave for each. Processing those - a full
+   * highlight pass over every node and edge plus tooltip DOM writes per
+   * crossing - is what made dragging the tree lag, so the hover handlers
+   * ignore events during a pan and we reset the hover state once here.
+   */
+  function clearHover() {
+    hideTooltip();
+    if (hoveredKey) {
+      hoveredKey = null;
+      updateHoverHighlight();
+    }
+  }
   window.addEventListener('mousemove', (e) => {
     if (!isPanning) return;
     const dx = (e.clientX - panStart.x) / viewScale;
@@ -214,14 +232,16 @@ function createTree(container) {
     for (const e of layoutEdges) link(e.source, e.target);
   }
 
+  // Theme tokens rather than literal colors: these land in inline styles,
+  // so nodes recolor immediately when the theme toggles.
   function statusColor(status) {
-    if (status === 'useful') return '#6fcf97';
-    if (status === 'useless') return '#eb5757';
-    return '#9aa1ad';
+    if (status === 'useful') return 'var(--leaf)';
+    if (status === 'useless') return 'var(--error)';
+    return 'var(--text-dim)';
   }
 
   function displayStatusColor(status) {
-    if (focusUseful && status === 'useless') return '#555b66';
+    if (focusUseful && status === 'useless') return 'var(--dim-neutral)';
     return statusColor(status);
   }
 
@@ -350,13 +370,29 @@ function createTree(container) {
       // adjacent), the element under the cursor can get detached from the
       // DOM between mousedown and mouseup, silently swallowing the click.
       // That looked like "clicking tree nodes does nothing."
+      //
+      // All hover work is skipped while panning (see clearHover). The
+      // mousemove handler doubles as recovery: hover state was reset when
+      // the pan started, so the first move over a node afterwards
+      // re-establishes its highlight.
       g.addEventListener('mouseenter', (e) => {
+        if (isPanning) return;
         hoveredKey = n.id;
         updateHoverHighlight();
         showTooltip(n, e);
       });
-      g.addEventListener('mousemove', (e) => moveTooltip(e));
+      g.addEventListener('mousemove', (e) => {
+        if (isPanning) return;
+        if (hoveredKey !== n.id) {
+          hoveredKey = n.id;
+          updateHoverHighlight();
+          showTooltip(n, e);
+          return;
+        }
+        moveTooltip(e);
+      });
       g.addEventListener('mouseleave', () => {
+        if (isPanning) return;
         hoveredKey = null;
         hideTooltip();
         updateHoverHighlight();

@@ -43,9 +43,19 @@
     detailStatus: document.getElementById('detail-status'),
     detailStatusInherited: document.getElementById('detail-status-inherited'),
     saveAnnotationBtn: document.getElementById('save-annotation-btn'),
-    status: document.getElementById('status-bar'),
+    status: document.getElementById('status-text'),
     currentFileLabel: document.getElementById('current-file-label'),
     annotatedCount: document.getElementById('annotated-count'),
+    themeToggleBtn: document.getElementById('theme-toggle-btn'),
+    openMenuBtn: document.getElementById('open-menu-btn'),
+    openMenu: document.getElementById('open-menu'),
+    uploadBtn: document.getElementById('upload-btn'),
+    groupPopoverBtn: document.getElementById('group-popover-btn'),
+    groupPopover: document.getElementById('group-popover'),
+    groupsBar: document.getElementById('groups-bar'),
+    emptyState: document.getElementById('empty-state'),
+    emptyStateHint: document.getElementById('empty-state-hint'),
+    emptyLoadBtn: document.getElementById('empty-load-btn'),
     groupFilterSelect: document.getElementById('group-filter-select'),
     groupsChips: document.getElementById('groups-chips'),
     newGroupName: document.getElementById('new-group-name'),
@@ -156,12 +166,14 @@
       for (const f of data.files) {
         const opt = document.createElement('option');
         opt.value = f.path;
+        opt.dataset.name = f.name;
         opt.textContent = `${f.name} (${f.sizeBytes} bytes)`;
         el.fileSelect.appendChild(opt);
       }
       setStatus(`Found ${data.files.length} .pref file(s) in ${data.dir}`);
+      updateEmptyState();
     } catch (err) {
-      setStatus(`Could not reach server API: ${err.message}. You can still use "Upload file" below.`, true);
+      setStatus(`Could not reach server API: ${err.message}. You can still upload a file from Open.`, true);
     }
   }
 
@@ -197,6 +209,7 @@
   function loadPrefText(text, label) {
     state.entries = window.PrefParser.parsePrefText(text);
     state.tree = window.PrefParser.buildTree(state.entries);
+    closePopovers();
     el.currentFileLabel.textContent = label;
     setStatus(`Loaded ${state.entries.length} entries from ${label}`);
     renderTable();
@@ -223,7 +236,28 @@
     return true;
   }
 
+  /**
+   * The table view's empty state: shown until a file is loaded, with a
+   * one-click load of whatever file is selected in the Open menu.
+   */
+  function updateEmptyState() {
+    const hasData = state.entries.length > 0;
+    el.tableView.classList.toggle('table-view--empty', !hasData);
+    el.emptyState.classList.toggle('hidden', hasData);
+    if (hasData) return;
+    const opt = el.fileSelect.options[el.fileSelect.selectedIndex];
+    if (opt) {
+      el.emptyLoadBtn.textContent = `Load ${opt.dataset.name || opt.textContent}`;
+      el.emptyLoadBtn.classList.remove('hidden');
+      el.emptyStateHint.textContent = 'Load the file below, or pick another one from Open.';
+    } else {
+      el.emptyLoadBtn.classList.add('hidden');
+      el.emptyStateHint.textContent = 'Scan a folder or upload a .pref file from Open.';
+    }
+  }
+
   function renderTable() {
+    updateEmptyState();
     const filter = el.searchInput.value.trim();
     el.tableBody.innerHTML = '';
 
@@ -323,14 +357,14 @@
       el.graphLegend.appendChild(row);
     };
 
-    addRow('<span class="graph-legend-swatch" style="background:#f2c94c"></span> Section (parent key)');
-    addRow('<span class="graph-legend-swatch" style="background:#6fcf97"></span> Useful');
-    addRow('<span class="graph-legend-swatch" style="background:#eb5757"></span> Not interested');
-    addRow('<span class="graph-legend-swatch" style="background:#9aa1ad"></span> Field, status unset');
-    addRow('<span class="graph-legend-swatch" style="background:#6fcf97;opacity:0.5"></span> Inherited from parent');
-    addRow('<span class="graph-legend-swatch" style="background:transparent;border:2px solid #5aa9e6;box-sizing:border-box"></span> Useful description');
+    addRow('<span class="graph-legend-swatch" style="background:var(--section)"></span> Section (parent key)');
+    addRow('<span class="graph-legend-swatch" style="background:var(--leaf)"></span> Useful');
+    addRow('<span class="graph-legend-swatch" style="background:var(--error)"></span> Not interested');
+    addRow('<span class="graph-legend-swatch" style="background:var(--text-dim)"></span> Field, status unset');
+    addRow('<span class="graph-legend-swatch" style="background:var(--leaf);opacity:0.5"></span> Inherited from parent');
+    addRow('<span class="graph-legend-swatch" style="background:transparent;border:2px solid var(--accent);box-sizing:border-box"></span> Useful description');
     if (state.focusUseful) {
-      addRow('<span class="graph-legend-swatch" style="background:#555b66"></span> Dimmed: not interested');
+      addRow('<span class="graph-legend-swatch" style="background:var(--dim-neutral)"></span> Dimmed: not interested');
     }
 
     if (state.groups.groups.length > 0) {
@@ -417,7 +451,7 @@
     if (state.groups.groups.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'detail-groups-empty';
-      empty.textContent = 'No groups yet. Add one from the bar above the table.';
+      empty.textContent = 'No groups yet. Create one with the "+ Group" button in the toolbar.';
       el.detailGroups.appendChild(empty);
       return;
     }
@@ -497,7 +531,9 @@
 
   function renderGroupsBar() {
     el.groupsChips.innerHTML = '';
-    el.groupFilterSelect.innerHTML = '<option value="">All fields</option>';
+    el.groupFilterSelect.innerHTML = '<option value="">All groups</option>';
+    // The chips bar only exists when there is something to show.
+    el.groupsBar.classList.toggle('hidden', state.groups.groups.length === 0);
 
     for (const g of state.groups.groups) {
       const count = g.keys.length;
@@ -561,6 +597,7 @@
     state.groups = await window.Groups.loadGroups();
     el.newGroupName.value = '';
     renderGroupsBar();
+    closePopovers();
     setStatus(`Created group "${group.name}". Open a field's detail panel to assign it.`);
   }
 
@@ -608,6 +645,7 @@
     el.saveAnnotationBtn.disabled = state.focusUseful;
     el.newGroupName.disabled = state.focusUseful;
     el.newGroupBtn.disabled = state.focusUseful;
+    el.groupPopoverBtn.disabled = state.focusUseful;
     for (const btn of el.detailStatus.querySelectorAll('.status-btn')) {
       btn.disabled = state.focusUseful;
     }
@@ -616,9 +654,70 @@
     }
   }
 
+  // Theme: index.html sets data-theme before first paint (saved choice or
+  // OS setting). The toggle stores an explicit choice; until one is stored,
+  // the app keeps following OS theme changes live.
+  function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    // The icon-only button names the theme you would switch TO.
+    const label = theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme';
+    el.themeToggleBtn.title = label;
+    el.themeToggleBtn.setAttribute('aria-label', label);
+  }
+  applyTheme(document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark');
+  el.themeToggleBtn.addEventListener('click', () => {
+    const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    applyTheme(next);
+    try { localStorage.setItem('ckm-theme', next); } catch (e) { /* ignore */ }
+  });
+  if (window.matchMedia) {
+    window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', (e) => {
+      let saved = null;
+      try { saved = localStorage.getItem('ckm-theme'); } catch (err) { /* ignore */ }
+      if (saved !== 'light' && saved !== 'dark') applyTheme(e.matches ? 'light' : 'dark');
+    });
+  }
+
+  // Popovers (Open menu, new group): one open at a time, closed by a click
+  // outside, Escape, or completing the action inside.
+  const popovers = [
+    { btn: el.openMenuBtn, panel: el.openMenu },
+    { btn: el.groupPopoverBtn, panel: el.groupPopover },
+  ];
+  function closePopovers() {
+    for (const p of popovers) {
+      p.panel.classList.add('hidden');
+      p.btn.setAttribute('aria-expanded', 'false');
+    }
+  }
+  for (const p of popovers) {
+    p.btn.addEventListener('click', () => {
+      const willOpen = p.panel.classList.contains('hidden');
+      closePopovers();
+      if (willOpen) {
+        p.panel.classList.remove('hidden');
+        p.btn.setAttribute('aria-expanded', 'true');
+        const field = p.panel.querySelector('input[type="text"]');
+        if (field) field.focus();
+      }
+    });
+  }
+  document.addEventListener('click', (e) => {
+    if (!popovers.some((p) => p.btn.contains(e.target) || p.panel.contains(e.target))) closePopovers();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closePopovers();
+  });
+
   el.scanBtn.addEventListener('click', scanFolder);
   el.loadSelectedBtn.addEventListener('click', loadSelectedFile);
-  el.fileUpload.addEventListener('change', (e) => loadFromUpload(e.target.files));
+  el.uploadBtn.addEventListener('click', () => el.fileUpload.click());
+  el.fileUpload.addEventListener('change', (e) => {
+    closePopovers();
+    loadFromUpload(e.target.files);
+  });
+  el.emptyLoadBtn.addEventListener('click', loadSelectedFile);
+  el.fileSelect.addEventListener('change', updateEmptyState);
   el.searchInput.addEventListener('input', renderTable);
   el.saveAnnotationBtn.addEventListener('click', saveCurrentAnnotation);
   el.viewTableBtn.addEventListener('click', () => switchView('table'));
@@ -644,6 +743,7 @@
     switchView('table');
     applyFocusModeUi();
     await scanFolder();
+    updateEmptyState();
   }
 
   init();

@@ -70,6 +70,7 @@ function createGraph(container) {
   // updatePositions() / refreshStyles() between rebuilds.
   let nodeEls = new Map(); // node.id -> { node, g, circle, label, hitArea, radius }
   let edgeEls = [];        // { edge, line } for tree edges + group edges
+  let incidentEdgeEls = new Map(); // node id -> the edgeEls entries touching it (drag updates)
   let parentNameById = new Map(); // node id -> parent section name, for leaf labels
   let hitAreasMeasured = false;
 
@@ -91,6 +92,7 @@ function createGraph(container) {
       isPanning = true;
       panStart = { x: e.clientX, y: e.clientY };
       viewStart = { x: viewX, y: viewY };
+      clearHover();
     }
   });
   window.addEventListener('mousemove', (e) => {
@@ -115,9 +117,29 @@ function createGraph(container) {
     draggedNode.y = viewY + ((e.clientY - rect.top) / rect.height) * (height / viewScale);
     draggedNode.vx = 0;
     draggedNode.vy = 0;
-    updatePositions();
+    // Only the dragged node and its incident edges moved; rewriting the
+    // whole scene (~1,800 attributes at ~350 nodes) per mouse event made
+    // node drags visibly stutter.
+    updateNodePosition(draggedNode);
   });
   window.addEventListener('mouseup', () => { draggedNode = null; });
+
+  /**
+   * Drop any active hover highlight/tooltip. Called when a pan or node drag
+   * starts: while the view is being dragged, content sweeps under the
+   * stationary cursor and fires mouseenter/mouseleave for every node that
+   * passes. Processing those (a full highlight pass over every node and
+   * edge, plus tooltip DOM writes, per crossing) is what made dragging lag,
+   * so the hover handlers ignore events during a pan/drag and we reset the
+   * hover state once up front instead.
+   */
+  function clearHover() {
+    hideTooltip();
+    if (hoveredKey) {
+      hoveredKey = null;
+      updateHoverHighlight();
+    }
+  }
 
   svg.addEventListener('wheel', (e) => {
     e.preventDefault();
@@ -328,14 +350,16 @@ function createGraph(container) {
     }
   }
 
+  // Theme tokens rather than literal colors: these land in inline styles,
+  // so nodes recolor immediately when the theme toggles.
   function statusColor(status) {
-    if (status === 'useful') return '#6fcf97';
-    if (status === 'useless') return '#eb5757';
-    return '#9aa1ad';
+    if (status === 'useful') return 'var(--leaf)';
+    if (status === 'useless') return 'var(--error)';
+    return 'var(--text-dim)';
   }
 
   function displayStatusColor(status) {
-    if (focusUseful && status === 'useless') return '#555b66';
+    if (focusUseful && status === 'useless') return 'var(--dim-neutral)';
     return statusColor(status);
   }
 
@@ -356,6 +380,16 @@ function createGraph(container) {
     while (nodesGroup.firstChild) nodesGroup.removeChild(nodesGroup.firstChild);
     nodeEls = new Map();
     edgeEls = [];
+    incidentEdgeEls = new Map();
+
+    const addEdgeEl = (edge, line) => {
+      const entry = { edge, line };
+      edgeEls.push(entry);
+      for (const id of [edge.source.id, edge.target.id]) {
+        if (!incidentEdgeEls.has(id)) incidentEdgeEls.set(id, []);
+        incidentEdgeEls.get(id).push(entry);
+      }
+    };
 
     for (const edge of simEdges) {
       const line = document.createElementNS(GRAPH_SVG_NS, 'line');
@@ -363,17 +397,19 @@ function createGraph(container) {
       line.dataset.source = edge.source.id;
       line.dataset.target = edge.target.id;
       edgesGroup.appendChild(line);
-      edgeEls.push({ edge, line });
+      addEdgeEl(edge, line);
     }
 
     for (const edge of groupEdges) {
       const line = document.createElementNS(GRAPH_SVG_NS, 'line');
       line.setAttribute('class', 'graph-edge graph-edge--group');
-      line.setAttribute('stroke', edge.color || '#5aa9e6');
+      // Inline style, not attribute: the .graph-edge class sets a stroke,
+      // which would override a presentation attribute.
+      line.style.stroke = edge.color || 'var(--accent)';
       line.dataset.source = edge.source.id;
       line.dataset.target = edge.target.id;
       edgesGroup.appendChild(line);
-      edgeEls.push({ edge, line });
+      addEdgeEl(edge, line);
     }
 
     for (const n of simNodes) {
@@ -425,13 +461,31 @@ function createGraph(container) {
       // element under the cursor can get detached from the DOM between
       // mousedown and mouseup, silently swallowing the click. That looked
       // like "clicking graph nodes does nothing."
+      //
+      // All hover work is skipped while panning or dragging: the view
+      // moving under a stationary cursor fires enter/leave for every node
+      // that sweeps past, and processing those storms is what made drags
+      // lag (see clearHover). The mousemove handler doubles as recovery -
+      // hover state was reset when the pan/drag started, so the first
+      // move over a node afterwards re-establishes its highlight.
       g.addEventListener('mouseenter', (e) => {
+        if (isPanning || draggedNode) return;
         hoveredKey = n.id;
         updateHoverHighlight();
         showTooltip(n, e);
       });
-      g.addEventListener('mousemove', (e) => moveTooltip(e));
+      g.addEventListener('mousemove', (e) => {
+        if (isPanning || draggedNode) return;
+        if (hoveredKey !== n.id) {
+          hoveredKey = n.id;
+          updateHoverHighlight();
+          showTooltip(n, e);
+          return;
+        }
+        moveTooltip(e);
+      });
       g.addEventListener('mouseleave', () => {
+        if (isPanning || draggedNode) return;
         hoveredKey = null;
         hideTooltip();
         updateHoverHighlight();
@@ -441,6 +495,7 @@ function createGraph(container) {
       // listener setup near the pan/zoom handlers above).
       g.addEventListener('mousedown', (e) => {
         draggedNode = n;
+        clearHover();
         e.stopPropagation();
       });
 
@@ -512,6 +567,21 @@ function createGraph(container) {
     }
     for (const { node, g } of nodeEls.values()) {
       g.setAttribute('transform', `translate(${node.x}, ${node.y})`);
+    }
+  }
+
+  /**
+   * Write one node's coordinates onto its element and incident edges only.
+   * Used while dragging, where nothing else in the scene moves.
+   */
+  function updateNodePosition(node) {
+    const entry = nodeEls.get(node.id);
+    if (entry) entry.g.setAttribute('transform', `translate(${node.x}, ${node.y})`);
+    for (const { edge, line } of incidentEdgeEls.get(node.id) || []) {
+      line.setAttribute('x1', edge.source.x);
+      line.setAttribute('y1', edge.source.y);
+      line.setAttribute('x2', edge.target.x);
+      line.setAttribute('y2', edge.target.y);
     }
   }
 
