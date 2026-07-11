@@ -219,7 +219,15 @@ function createTree(container) {
       // contributes no rows for its subtree.
       if (collapsed) return;
 
-      for (const child of node.children.values()) {
+      // Rows are status-sorted at every level: Useful (green) first, unset
+      // (gold) in the middle, Not interested (red) last - so the top of the
+      // tree is what matters and the bottom is what's been ruled out.
+      // The sort is stable, so file order is kept within each band.
+      const statusRank = { useful: 0, '': 1, useless: 2 };
+      const kids = [...node.children.values()].sort(
+        (a, b) => statusRank[statusOf(a.fullKey).status] - statusRank[statusOf(b.fullKey).status]
+      );
+      for (const child of kids) {
         visit(child, depth + 1, currentId);
       }
     }
@@ -710,6 +718,51 @@ function createTree(container) {
     applyViewBox();
   }
 
+  /**
+   * Frame the top of the tree at a readable zoom: fit the content width
+   * (clamped so labels stay legible) and anchor at the first rows. Used
+   * after "Expand all", where a full fitToView on 250 rows zooms out to
+   * an unreadable sliver - the user pans/scrolls down instead.
+   */
+  function fitToTop() {
+    const real = layoutNodes.filter((n) => n.id !== '__root__');
+    if (real.length === 0) return;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity;
+    for (const n of real) {
+      minX = Math.min(minX, n.x);
+      minY = Math.min(minY, n.y);
+      maxX = Math.max(maxX, n.x);
+    }
+    // Leaf labels extend past node centers; leave room for them.
+    const pad = 220;
+    minX -= pad; maxX += pad;
+    const boxW = Math.max(maxX - minX, 50);
+    viewScale = Math.max(0.7, Math.min(1.25, width / boxW));
+    viewX = minX + boxW / 2 - (width / viewScale) / 2;
+    viewY = minY - 40;
+    applyViewBox();
+  }
+
+  /**
+   * Keep the current zoom level but move the viewport to the top of the
+   * tree, centered on the content. Used after "Collapse all": the user's
+   * zoom is retained, but if they were panned deep into the (now folded)
+   * tree they would otherwise be left staring at empty space.
+   */
+  function anchorTop() {
+    const real = layoutNodes.filter((n) => n.id !== '__root__');
+    if (real.length === 0) return;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity;
+    for (const n of real) {
+      minX = Math.min(minX, n.x);
+      minY = Math.min(minY, n.y);
+      maxX = Math.max(maxX, n.x);
+    }
+    viewX = (minX + maxX) / 2 - (width / viewScale) / 2;
+    viewY = minY - 40;
+    applyViewBox();
+  }
+
   return {
     setData,
     resize,
@@ -728,6 +781,8 @@ function createTree(container) {
     expandAll,
     collapseAll,
     hasCollapsed,
+    fitToTop,
+    anchorTop,
     resetView() { viewX = 0; viewY = 0; viewScale = 1; applyViewBox(); },
     fitToView,
   };

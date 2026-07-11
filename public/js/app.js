@@ -757,10 +757,18 @@
   el.fitViewBtn.addEventListener('click', () => graph.fitToView());
   el.treeFitViewBtn.addEventListener('click', () => tree.fitToView());
   el.treeExpandAllBtn.addEventListener('click', () => {
-    if (tree.hasCollapsed()) tree.expandAll();
-    else tree.collapseAll();
+    if (tree.hasCollapsed()) {
+      tree.expandAll();
+      // Fitting 250 rows into the viewport would zoom out to a sliver;
+      // frame the top at a readable zoom and let the user pan down.
+      tree.fitToTop();
+    } else {
+      // Collapse keeps the user's zoom level; just re-anchor to the top
+      // so they aren't left staring at empty space below the folded tree.
+      tree.collapseAll();
+      tree.anchorTop();
+    }
     updateTreeExpandBtn();
-    tree.fitToView();
   });
   for (const btn of el.detailStatus.querySelectorAll('.status-btn')) {
     btn.addEventListener('click', () => setStatusForActiveKey(btn.dataset.status));
