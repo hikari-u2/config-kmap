@@ -59,7 +59,9 @@ pwsh ./server.ps1 -Port 8081 -PrefsDir "C:\path\to\your\configs"
    saved description in the detail panel, then turn focus mode off to edit.
 9. **Export manual** — the toolbar button builds a Word document (`.docx`)
    from the **Useful** fields only: one numbered manual section per top-level
-   key, one subsection per field with its value, description, and tags.
+   key, one subsection per field showing the raw config line as a shaded
+   code block (`key=value`, as it appears in the file), then the
+   description and tags.
    Fields without their own note borrow the nearest section note; missing
    descriptions become visible "TODO" placeholders. Copy the sections into
    the real Software User Manual and extend them. (Uses real Word heading

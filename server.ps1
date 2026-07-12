@@ -142,8 +142,10 @@ function New-ManualDocxBytes($payload) {
         foreach ($field in @($section.fields)) {
             $fi++
             [void]$sb.Append((New-DocxParagraph "Heading2" (New-DocxRun "$si.$fi $($field.key)")))
-            $valueRuns = (New-DocxRun "Value: " $true) + (New-DocxRun ([string]$field.value) $false $false "Consolas")
-            [void]$sb.Append((New-DocxParagraph "" $valueRuns))
+            # The raw config line as a shaded code block (markdown-fence
+            # look), so the manual shows exactly what sits in the file.
+            $codeLine = "$($field.key)=$($field.value)"
+            [void]$sb.Append((New-DocxParagraph "CodeBlock" (New-DocxRun $codeLine $false $false "Consolas")))
             if ($field.description) {
                 [void]$sb.Append((New-DocxParagraph "" (New-DocxRun ([string]$field.description))))
             } else {
@@ -199,6 +201,16 @@ function New-ManualDocxBytes($payload) {
         '<w:rPr><w:b/><w:sz w:val="26"/><w:rFonts w:ascii="Consolas" w:hAnsi="Consolas"/></w:rPr></w:style>' +
         '<w:style w:type="paragraph" w:styleId="Subtle"><w:name w:val="Subtle"/><w:basedOn w:val="Normal"/>' +
         '<w:rPr><w:i/><w:color w:val="808080"/><w:sz w:val="20"/></w:rPr></w:style>' +
+        '<w:style w:type="paragraph" w:styleId="CodeBlock"><w:name w:val="Code Block"/><w:basedOn w:val="Normal"/>' +
+        '<w:pPr><w:shd w:val="clear" w:color="auto" w:fill="F2F2F2"/>' +
+        '<w:pBdr>' +
+        '<w:top w:val="single" w:sz="4" w:space="4" w:color="D9D9D9"/>' +
+        '<w:bottom w:val="single" w:sz="4" w:space="4" w:color="D9D9D9"/>' +
+        '<w:left w:val="single" w:sz="4" w:space="4" w:color="D9D9D9"/>' +
+        '<w:right w:val="single" w:sz="4" w:space="4" w:color="D9D9D9"/>' +
+        '</w:pBdr>' +
+        '<w:spacing w:before="80" w:after="120"/><w:ind w:left="113" w:right="113"/></w:pPr>' +
+        '<w:rPr><w:rFonts w:ascii="Consolas" w:hAnsi="Consolas"/><w:sz w:val="20"/></w:rPr></w:style>' +
         '</w:styles>'
 
     $parts = [ordered]@{
