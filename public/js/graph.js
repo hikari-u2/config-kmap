@@ -57,6 +57,7 @@ function createGraph(container) {
   let groupEdges = [];
   let rafId = null;
   let onNodeClick = null;
+  let selectedKeys = new Set(); // multi-select highlight
   let hasAnnotationFn = null;
   let groupsForNodeFn = null; // (key) => [{ id, color, name }, ...]
   let infoForNodeFn = null;   // (key) => { value, description, tags: [] }
@@ -449,8 +450,8 @@ function createGraph(container) {
       label.setAttribute('y', 4);
       g.appendChild(label);
 
-      g.addEventListener('click', () => {
-        if (onNodeClick) onNodeClick(n.id, n.isLeaf, n.value);
+      g.addEventListener('click', (e) => {
+        if (onNodeClick) onNodeClick(n.id, n.isLeaf, n.value, e);
       });
 
       // Hovering only needs to toggle highlight classes on the existing
@@ -594,6 +595,7 @@ function createGraph(container) {
   function refreshStyles() {
     for (const { node, g, circle } of nodeEls.values()) {
       const eff = statusOf(node.id);
+      g.classList.toggle('graph-node--selected', selectedKeys.has(node.id));
       g.classList.toggle('graph-node--annotated', Boolean(hasAnnotationFn && hasAnnotationFn(node.id)));
       g.classList.toggle('graph-node--inherited', eff.inherited);
       g.classList.toggle('graph-node--focus-dimmed', focusUseful && eff.status === 'useless');
@@ -704,6 +706,7 @@ function createGraph(container) {
     setGroups,
     resize,
     onNodeClick(fn) { onNodeClick = fn; },
+    setSelectedKeys(keys) { selectedKeys = keys; refreshStyles(); },
     setAnnotationChecker(fn) { hasAnnotationFn = fn; },
     setGroupsChecker(fn) { groupsForNodeFn = fn; buildScene(); },
     setInfoProvider(fn) { infoForNodeFn = fn; },

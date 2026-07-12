@@ -69,6 +69,7 @@ function createTree(container) {
   let lastRoot = null;        // retained so collapse toggles can re-layout
   let collapsedIds = new Set(); // section ids whose children are hidden
   let onNodeClick = null;
+  let selectedKeys = new Set(); // multi-select highlight
   let hasAnnotationFn = null;
   let groupsForNodeFn = null;
   let infoForNodeFn = null;
@@ -406,6 +407,7 @@ function createTree(container) {
 
       const annotated = hasAnnotationFn ? hasAnnotationFn(n.id) : false;
       if (annotated) g.classList.add('tree-node--annotated');
+      if (selectedKeys.has(n.id)) g.classList.add('tree-node--selected');
 
       const radius = n.isLeaf ? 6 : 9;
 
@@ -473,13 +475,16 @@ function createTree(container) {
       }
       g.appendChild(label);
 
-      g.addEventListener('click', () => {
+      g.addEventListener('click', (e) => {
         // One click does both jobs for a section: toggle its subtree AND
         // show its details. The detail panel is a passive side panel, so
         // opening it alongside the toggle costs nothing, and it keeps
         // status-marking of sections (a core workflow) one click away.
-        if (!n.isLeaf) toggleCollapse(n.id);
-        if (onNodeClick) onNodeClick(n.id, n.isLeaf, n.value);
+        // Modifier clicks are multi-select (handled by the app callback),
+        // so they must not also fold/unfold the section under the cursor.
+        const multi = e.ctrlKey || e.metaKey || e.shiftKey;
+        if (!n.isLeaf && !multi) toggleCollapse(n.id);
+        if (onNodeClick) onNodeClick(n.id, n.isLeaf, n.value, e);
       });
 
       // Hovering only needs to toggle highlight classes on the existing
@@ -608,8 +613,8 @@ function createTree(container) {
       note.setAttribute('class', 'tree-callout-note');
       note.setAttribute('transform', `translate(${noteX}, ${noteY})`);
       note.dataset.key = node.id;
-      note.addEventListener('click', () => {
-        if (onNodeClick) onNodeClick(node.id, node.isLeaf, node.value);
+      note.addEventListener('click', (e) => {
+        if (onNodeClick) onNodeClick(node.id, node.isLeaf, node.value, e);
       });
 
       const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
@@ -792,6 +797,7 @@ function createTree(container) {
     setData,
     resize,
     onNodeClick(fn) { onNodeClick = fn; },
+    setSelectedKeys(keys) { selectedKeys = keys; render(); },
     setAnnotationChecker(fn) { hasAnnotationFn = fn; },
     setGroupsChecker(fn) { groupsForNodeFn = fn; render(); },
     setInfoProvider(fn) { infoForNodeFn = fn; },

@@ -119,6 +119,14 @@
 
   <main class="main-layout">
     <div id="focus-mode-banner" class="focus-mode-banner hidden">Focus useful mode</div>
+    <div id="selection-bar" class="selection-bar hidden" role="toolbar" aria-label="Bulk status for selected items">
+      <span id="selection-count" class="selection-count">0 selected</span>
+      <button type="button" class="status-btn status-btn--useless" data-status="useless">Not interested</button>
+      <button type="button" class="status-btn status-btn--unset" data-status="">Unset</button>
+      <button type="button" class="status-btn status-btn--useful" data-status="useful">Useful</button>
+      <span class="selection-hint">Ctrl+click adds &middot; Esc clears</span>
+      <button type="button" id="selection-clear-btn" class="selection-clear-btn" title="Clear selection (Esc)">&times;</button>
+    </div>
     <div id="table-view" class="table-view">
       <div id="empty-state" class="empty-state hidden">
         <p class="empty-state-title">No file loaded</p>

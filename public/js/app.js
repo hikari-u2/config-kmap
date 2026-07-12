@@ -15,6 +15,7 @@
     view: 'table', // 'table' | 'graph' | 'tree'
     pendingStatus: '', // status selected in detail panel before save (also applied immediately)
     sort: { col: '', dir: 1 }, // table sort; col '' = file order
+    selectedKeys: new Set(), // multi-select for bulk status marking
   };
 
   const el = {
@@ -67,10 +68,18 @@
     graphLegend: document.getElementById('graph-legend'),
     treeFitViewBtn: document.getElementById('tree-fit-view-btn'),
     treeExpandAllBtn: document.getElementById('tree-expand-all-btn'),
+    selectionBar: document.getElementById('selection-bar'),
+    selectionCount: document.getElementById('selection-count'),
+    selectionClearBtn: document.getElementById('selection-clear-btn'),
   };
 
   const graph = window.KMapGraph.createGraph(el.graphView);
-  graph.onNodeClick(async (key, isLeaf, value) => {
+  graph.onNodeClick(async (key, isLeaf, value, e) => {
+    if (e && (e.ctrlKey || e.metaKey || e.shiftKey)) {
+      toggleSelected(key);
+      return;
+    }
+    clearSelection();
     await showDetail(key, isLeaf, value);
   });
   graph.setAnnotationChecker((key) => hasUsefulDescription(key));
@@ -87,7 +96,12 @@
   graph.setStatusProvider((key) => effectiveStatusForKey(key));
 
   const tree = window.KMapTree.createTree(el.treeView);
-  tree.onNodeClick(async (key, isLeaf, value) => {
+  tree.onNodeClick(async (key, isLeaf, value, e) => {
+    if (e && (e.ctrlKey || e.metaKey || e.shiftKey)) {
+      toggleSelected(key);
+      return;
+    }
+    clearSelection();
     updateTreeExpandBtn(); // section clicks toggle collapse state
     await showDetail(key, isLeaf, value);
   });
@@ -218,6 +232,8 @@
     state.entries = window.PrefParser.parsePrefText(text);
     state.tree = window.PrefParser.buildTree(state.entries);
     closePopovers();
+    clearSelection();
+    lastRowClickedKey = null;
     el.currentFileLabel.textContent = label;
     setStatus(`Loaded ${state.entries.length} entries from ${label}`);
     renderTable();
@@ -330,13 +346,16 @@
     updateSortIndicators();
     const filter = el.searchInput.value.trim();
     el.tableBody.innerHTML = '';
+    lastRenderedKeys = [];
 
     for (const entry of sortedEntries(state.entries)) {
       if (!matchesFilter(entry.key, entry.value, filter)) continue;
+      lastRenderedKeys.push(entry.key);
 
       const tr = document.createElement('tr');
       tr.dataset.key = entry.key;
       tr.classList.toggle('row--focus-dimmed', state.focusUseful && isEffectivelyUseless(entry.key));
+      tr.classList.toggle('row--selected', state.selectedKeys.has(entry.key));
 
       const keyTd = document.createElement('td');
       keyTd.className = 'cell-key';
@@ -387,7 +406,20 @@
       tr.appendChild(tagsTd);
       tr.appendChild(groupsTd);
 
-      tr.addEventListener('click', () => showDetail(entry.key, true, entry.value));
+      tr.addEventListener('click', (e) => {
+        if (e.ctrlKey || e.metaKey) {
+          toggleSelected(entry.key);
+          lastRowClickedKey = entry.key;
+          return;
+        }
+        if (e.shiftKey && lastRowClickedKey) {
+          selectRowRange(lastRowClickedKey, entry.key);
+          return;
+        }
+        lastRowClickedKey = entry.key;
+        clearSelection();
+        showDetail(entry.key, true, entry.value);
+      });
 
       el.tableBody.appendChild(tr);
     }
@@ -496,6 +528,82 @@
     setStatus(
       `Marked "${state.activeKey}" as ${status || 'unset'} — subnodes without their own status inherit it.`
     );
+  }
+
+  /* ------------------------------------------------- multi-select + bulk */
+
+  // Anchor for shift-click range selection in the table (last clicked row).
+  let lastRowClickedKey = null;
+  // Table row order as last rendered, so shift-click ranges follow the
+  // current sort/filter, not the file order.
+  let lastRenderedKeys = [];
+
+  function toggleSelected(key) {
+    if (state.selectedKeys.has(key)) state.selectedKeys.delete(key);
+    else state.selectedKeys.add(key);
+    selectionChanged();
+  }
+
+  function selectRowRange(fromKey, toKey) {
+    const a = lastRenderedKeys.indexOf(fromKey);
+    const b = lastRenderedKeys.indexOf(toKey);
+    if (a === -1 || b === -1) {
+      toggleSelected(toKey);
+      return;
+    }
+    for (let i = Math.min(a, b); i <= Math.max(a, b); i++) {
+      state.selectedKeys.add(lastRenderedKeys[i]);
+    }
+    selectionChanged();
+  }
+
+  function clearSelection() {
+    if (state.selectedKeys.size === 0) return;
+    state.selectedKeys.clear();
+    selectionChanged();
+  }
+
+  /**
+   * Repaint everything that shows selection. Bulk mode is for quick status
+   * triage, so the detail panel (description editing) closes while a
+   * selection is active - descriptions are deliberately out of the way here.
+   */
+  function selectionChanged() {
+    const n = state.selectedKeys.size;
+    el.selectionBar.classList.toggle('hidden', n === 0);
+    el.selectionCount.textContent = `${n} selected`;
+    if (n > 0) {
+      el.detailPanel.classList.add('hidden');
+      state.activeKey = null;
+    }
+    for (const tr of el.tableBody.children) {
+      tr.classList.toggle('row--selected', state.selectedKeys.has(tr.dataset.key));
+    }
+    tree.setSelectedKeys(new Set(state.selectedKeys));
+    graph.setSelectedKeys(new Set(state.selectedKeys));
+  }
+
+  async function applyBulkStatus(status) {
+    if (state.focusUseful) {
+      setStatus('Editing is disabled while Focus useful is active.', true);
+      return;
+    }
+    if (state.selectedKeys.size === 0) return;
+    const all = await window.Annotations.loadAnnotations();
+    for (const key of state.selectedKeys) {
+      const existing = all[key] || { description: '', tags: [], status: '' };
+      all[key] = { ...existing, status };
+    }
+    await window.Annotations.saveAnnotations(all);
+    state.annotations = all;
+    const n = state.selectedKeys.size;
+    clearSelection();
+    renderTable();
+    renderTree();
+    graph.refresh();
+    updateAnnotatedCount();
+    const label = status === 'useful' ? 'Useful' : status === 'useless' ? 'Not interested' : 'unset';
+    setStatus(`Marked ${n} item(s) as ${label} — subnodes without their own status inherit it.`);
   }
 
   function updateInheritedNote(key) {
@@ -786,8 +894,20 @@
     if (!popovers.some((p) => p.btn.contains(e.target) || p.panel.contains(e.target))) closePopovers();
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closePopovers();
+    if (e.key === 'Escape') {
+      closePopovers();
+      clearSelection();
+    }
   });
+  // Shift+click is range-select in the table; stop the browser from also
+  // sweeping a text selection across the rows.
+  el.tableBody.addEventListener('mousedown', (e) => {
+    if (e.shiftKey) e.preventDefault();
+  });
+  for (const btn of el.selectionBar.querySelectorAll('.status-btn')) {
+    btn.addEventListener('click', () => applyBulkStatus(btn.dataset.status));
+  }
+  el.selectionClearBtn.addEventListener('click', clearSelection);
 
   el.scanBtn.addEventListener('click', scanFolder);
   el.loadSelectedBtn.addEventListener('click', loadSelectedFile);
