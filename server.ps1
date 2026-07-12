@@ -6,6 +6,7 @@
     Serves the static frontend (public/) and a small JSON API:
       GET  /api/list-prefs?dir=<path>        -> list .pref/.prefs files in a folder
       GET  /api/read-pref?path=<file>         -> read contents of a .pref file
+      POST /api/export-docx                   -> build a .docx manual from posted Useful fields
       GET  /api/annotations                   -> read annotations.json
       POST /api/annotations  (JSON body)      -> save annotations.json
       GET  /api/groups                        -> read groups.json
@@ -96,7 +97,136 @@ function Resolve-SafePath([string]$root, [string]$relativeOrAbsolute) {
     return $full
 }
 
+# ------------------------------------------------------------- docx export
+# A .docx is a ZIP of WordprocessingML XML parts - buildable with .NET's
+# ZipArchive, no Word and no external tools needed (the whole app must stay
+# dependency-free, see README). The manual export turns Useful fields into
+# numbered user-manual sections someone can copy into the real SUM document.
+
+function Escape-Xml([string]$s) {
+    if ($null -eq $s) { return "" }
+    return [System.Security.SecurityElement]::Escape($s)
+}
+
+function New-DocxRun([string]$text, [bool]$bold = $false, [bool]$italic = $false, [string]$font = "", [string]$color = "") {
+    $rPr = ""
+    if ($bold) { $rPr += "<w:b/>" }
+    if ($italic) { $rPr += "<w:i/>" }
+    if ($font) { $rPr += "<w:rFonts w:ascii=`"$font`" w:hAnsi=`"$font`"/>" }
+    if ($color) { $rPr += "<w:color w:val=`"$color`"/>" }
+    if ($rPr) { $rPr = "<w:rPr>$rPr</w:rPr>" }
+    return "<w:r>$rPr<w:t xml:space=`"preserve`">$(Escape-Xml $text)</w:t></w:r>"
+}
+
+function New-DocxParagraph([string]$styleId, [string]$runsXml) {
+    $pPr = ""
+    if ($styleId) { $pPr = "<w:pPr><w:pStyle w:val=`"$styleId`"/></w:pPr>" }
+    return "<w:p>$pPr$runsXml</w:p>"
+}
+
+function New-ManualDocxBytes($payload) {
+    $sb = [System.Text.StringBuilder]::new()
+    [void]$sb.Append((New-DocxParagraph "Title" (New-DocxRun "Configuration reference")))
+    $meta = "Useful fields from $($payload.sourceFile), exported $($payload.generated). " +
+        "Copy these sections into the Software User Manual and extend them."
+    [void]$sb.Append((New-DocxParagraph "Subtle" (New-DocxRun $meta)))
+
+    $si = 0
+    foreach ($section in @($payload.sections)) {
+        $si++
+        [void]$sb.Append((New-DocxParagraph "Heading1" (New-DocxRun "$si. $($section.name)")))
+        if ($section.description) {
+            [void]$sb.Append((New-DocxParagraph "" (New-DocxRun ([string]$section.description))))
+        }
+        $fi = 0
+        foreach ($field in @($section.fields)) {
+            $fi++
+            [void]$sb.Append((New-DocxParagraph "Heading2" (New-DocxRun "$si.$fi $($field.key)")))
+            $valueRuns = (New-DocxRun "Value: " $true) + (New-DocxRun ([string]$field.value) $false $false "Consolas")
+            [void]$sb.Append((New-DocxParagraph "" $valueRuns))
+            if ($field.description) {
+                [void]$sb.Append((New-DocxParagraph "" (New-DocxRun ([string]$field.description))))
+            } else {
+                # Placeholder so the manual writer sees the gap instead of a
+                # silently undocumented field.
+                [void]$sb.Append((New-DocxParagraph "" (New-DocxRun "TODO: describe this field." $false $true "" "808080")))
+            }
+            if ($field.tags -and @($field.tags).Count -gt 0) {
+                [void]$sb.Append((New-DocxParagraph "Subtle" (New-DocxRun ("Tags: " + (@($field.tags) -join ", ")) $false $true)))
+            }
+        }
+    }
+
+    $documentXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>' +
+        $sb.ToString() +
+        '<w:sectPr><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134"/></w:sectPr></w:body></w:document>'
+
+    $contentTypes = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+        '<Default Extension="xml" ContentType="application/xml"/>' +
+        '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
+        '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>' +
+        '</Types>'
+
+    $rels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
+        '</Relationships>'
+
+    $docRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
+        '</Relationships>'
+
+    # Real Word heading styles (w:name "heading 1"...) so the exported
+    # sections pick up the target document's own heading formatting and
+    # numbering when pasted, and show up in Word's navigation pane.
+    $stylesXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+        '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/>' +
+        '<w:pPr><w:spacing w:after="120"/></w:pPr>' +
+        '<w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/><w:sz w:val="22"/></w:rPr></w:style>' +
+        '<w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/>' +
+        '<w:pPr><w:spacing w:after="240"/></w:pPr>' +
+        '<w:rPr><w:b/><w:sz w:val="44"/></w:rPr></w:style>' +
+        '<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/>' +
+        '<w:pPr><w:spacing w:before="360" w:after="120"/><w:outlineLvl w:val="0"/></w:pPr>' +
+        '<w:rPr><w:b/><w:sz w:val="32"/><w:color w:val="1F6FB2"/></w:rPr></w:style>' +
+        '<w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/>' +
+        '<w:pPr><w:spacing w:before="240" w:after="80"/><w:outlineLvl w:val="1"/></w:pPr>' +
+        '<w:rPr><w:b/><w:sz w:val="26"/><w:rFonts w:ascii="Consolas" w:hAnsi="Consolas"/></w:rPr></w:style>' +
+        '<w:style w:type="paragraph" w:styleId="Subtle"><w:name w:val="Subtle"/><w:basedOn w:val="Normal"/>' +
+        '<w:rPr><w:i/><w:color w:val="808080"/><w:sz w:val="20"/></w:rPr></w:style>' +
+        '</w:styles>'
+
+    $parts = [ordered]@{
+        "[Content_Types].xml"         = $contentTypes
+        "_rels/.rels"                 = $rels
+        "word/_rels/document.xml.rels" = $docRels
+        "word/document.xml"           = $documentXml
+        "word/styles.xml"             = $stylesXml
+    }
+
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    $ms = New-Object System.IO.MemoryStream
+    $zip = New-Object System.IO.Compression.ZipArchive($ms, [System.IO.Compression.ZipArchiveMode]::Create, $true)
+    foreach ($name in $parts.Keys) {
+        $entry = $zip.CreateEntry($name)
+        $stream = $entry.Open()
+        $bytes = $utf8.GetBytes($parts[$name])
+        $stream.Write($bytes, 0, $bytes.Length)
+        $stream.Close()
+    }
+    $zip.Dispose()
+    $result = $ms.ToArray()
+    $ms.Dispose()
+    return $result
+}
+
 Add-Type -AssemblyName System.Web
+Add-Type -AssemblyName System.IO.Compression
 
 $listener = [System.Net.HttpListener]::new()
 # "localhost" (unlike a wildcard "+" or "*" prefix) is exempt from Windows'
@@ -206,6 +336,25 @@ try {
                 }
                 Set-Content -Path $AnnotationsFile -Value $body -Encoding UTF8
                 Write-JsonResponse $response @{ ok = $true }
+            }
+            elseif ($request.HttpMethod -eq "POST" -and $path -eq "/api/export-docx") {
+                $reader = New-Object System.IO.StreamReader($request.InputStream, [System.Text.Encoding]::UTF8)
+                $body = $reader.ReadToEnd()
+                $reader.Close()
+                $payload = $null
+                try {
+                    $payload = $body | ConvertFrom-Json
+                } catch {
+                    Write-JsonResponse $response @{ error = "Invalid JSON body" } 400
+                    continue
+                }
+                $bytes = New-ManualDocxBytes $payload
+                $response.StatusCode = 200
+                $response.ContentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                $response.AddHeader("Content-Disposition", "attachment")
+                $response.ContentLength64 = $bytes.Length
+                $response.OutputStream.Write($bytes, 0, $bytes.Length)
+                $response.OutputStream.Close()
             }
             elseif ($request.HttpMethod -eq "GET" -and $path -eq "/api/groups") {
                 $content = Get-Content -Path $GroupsFile -Raw -Encoding UTF8

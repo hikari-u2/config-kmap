@@ -71,6 +71,7 @@
     selectionBar: document.getElementById('selection-bar'),
     selectionCount: document.getElementById('selection-count'),
     selectionClearBtn: document.getElementById('selection-clear-btn'),
+    exportManualBtn: document.getElementById('export-manual-btn'),
   };
 
   const graph = window.KMapGraph.createGraph(el.graphView);
@@ -712,6 +713,98 @@
     const total = state.entries.length;
     const annotated = state.entries.filter((e) => hasUsefulDescription(e.key)).length;
     el.annotatedCount.textContent = `${annotated} / ${total} useful descriptions`;
+    updateExportBtn();
+  }
+
+  /* -------------------------------------------------- manual export (docx) */
+
+  function updateExportBtn() {
+    const count = state.entries.filter((e) => isEffectivelyUseful(e.key)).length;
+    el.exportManualBtn.disabled = count === 0;
+    el.exportManualBtn.title = count === 0
+      ? 'Mark fields as Useful to export them as manual sections'
+      : `Word document of the ${count} Useful field(s) and their notes, as manual sections`;
+  }
+
+  /**
+   * Useful fields grouped into manual sections by top-level key. A field
+   * without its own note borrows the nearest ancestor section's note
+   * (attributed), so the manual writer gets whatever context exists.
+   */
+  function usefulExportSections() {
+    const sections = [];
+    const byName = new Map();
+    for (const entry of state.entries) {
+      if (!isEffectivelyUseful(entry.key)) continue;
+      const top = entry.key.split('.')[0];
+      if (!byName.has(top)) {
+        const secAnn = state.annotations[top];
+        const sec = {
+          name: top,
+          description: secAnn && secAnn.description ? secAnn.description : '',
+          fields: [],
+        };
+        byName.set(top, sec);
+        sections.push(sec);
+      }
+      const ann = state.annotations[entry.key];
+      let description = ann && ann.description ? ann.description : '';
+      if (!description) {
+        // Walk up to (but not including) the top-level section - its note
+        // already heads the section in the document.
+        const parts = entry.key.split('.');
+        for (let i = parts.length - 1; i >= 2; i--) {
+          const parentKey = parts.slice(0, i).join('.');
+          const parentAnn = state.annotations[parentKey];
+          if (parentAnn && parentAnn.description) {
+            description = `${parentAnn.description} (note on ${parentKey})`;
+            break;
+          }
+        }
+      }
+      byName.get(top).fields.push({
+        key: entry.key,
+        value: entry.value,
+        description,
+        tags: ann && ann.tags ? ann.tags : [],
+      });
+    }
+    return sections;
+  }
+
+  async function exportManual() {
+    const sections = usefulExportSections();
+    const count = sections.reduce((n, s) => n + s.fields.length, 0);
+    if (count === 0) {
+      setStatus('Nothing to export - mark fields as Useful first.', true);
+      return;
+    }
+    setStatus('Building manual…');
+    try {
+      const res = await fetch('/api/export-docx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sourceFile: el.currentFileLabel.textContent || 'config',
+          generated: new Date().toISOString().slice(0, 10),
+          sections,
+        }),
+      });
+      if (!res.ok) throw new Error(res.statusText || `HTTP ${res.status}`);
+      const blob = await res.blob();
+      const base = (el.currentFileLabel.textContent || 'config')
+        .split(/[\\/]/).pop().replace(/\.[^.]+$/, '');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `${base}-manual.docx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+      setStatus(`Exported ${count} Useful field(s) to ${a.download} — copy the sections into the manual and extend.`);
+    } catch (err) {
+      setStatus(`Export failed: ${err.message}. The PowerShell server must be running.`, true);
+    }
   }
 
   function renderGroupsBar() {
@@ -908,6 +1001,7 @@
     btn.addEventListener('click', () => applyBulkStatus(btn.dataset.status));
   }
   el.selectionClearBtn.addEventListener('click', clearSelection);
+  el.exportManualBtn.addEventListener('click', exportManual);
 
   el.scanBtn.addEventListener('click', scanFolder);
   el.loadSelectedBtn.addEventListener('click', loadSelectedFile);

@@ -57,6 +57,15 @@ pwsh ./server.ps1 -Port 8081 -PrefsDir "C:\path\to\your\configs"
    descriptions also appear as sticky-note callouts connected to their fields
    by arrows. Focus mode is read-only: click any dimmed key to inspect its
    saved description in the detail panel, then turn focus mode off to edit.
+9. **Export manual** — the toolbar button builds a Word document (`.docx`)
+   from the **Useful** fields only: one numbered manual section per top-level
+   key, one subsection per field with its value, description, and tags.
+   Fields without their own note borrow the nearest section note; missing
+   descriptions become visible "TODO" placeholders. Copy the sections into
+   the real Software User Manual and extend them. (Uses real Word heading
+   styles, so pasted sections adopt the target document's formatting.)
+   Needs the PowerShell server (it assembles the `.docx`); the button is
+   disabled until at least one field is Useful.
 
 ## AI Usage
 
