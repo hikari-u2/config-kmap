@@ -168,7 +168,7 @@
       }
       el.fileSelect.innerHTML = '';
       if (data.files.length === 0) {
-        setStatus(`No .pref files found in ${data.dir}`, true);
+        setStatus(`No .pref/.prefs files found in ${data.dir}`, true);
         return;
       }
       for (const f of data.files) {
@@ -178,7 +178,7 @@
         opt.textContent = `${f.name} (${f.sizeBytes} bytes)`;
         el.fileSelect.appendChild(opt);
       }
-      setStatus(`Found ${data.files.length} .pref file(s) in ${data.dir}`);
+      setStatus(`Found ${data.files.length} .pref/.prefs file(s) in ${data.dir}`);
       updateEmptyState();
     } catch (err) {
       setStatus(`Could not reach server API: ${err.message}. You can still upload a file from Open.`, true);

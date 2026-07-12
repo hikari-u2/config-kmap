@@ -28,7 +28,7 @@ pwsh ./server.ps1 -Port 8081 -PrefsDir "C:\path\to\your\configs"
 ## Using it
 
 1. **Folder scan** — type a folder path (or leave blank to use `./prefs`) and
-   click **Scan** to list `.pref` files found there, then **Load**.
+   click **Scan** to list `.pref`/`.prefs` files found there, then **Load**.
 2. **Upload** — or use the file picker to load a `.pref` file directly from
    your browser without relying on the server's folder scan.
 3. **Table view** — every key/value pair, with status, tags, and descriptions.
@@ -80,7 +80,7 @@ documentation visible.
 - Browser `localStorage` — a mirror of the same data, used automatically if
   the PowerShell server API is unreachable (e.g. you opened `public/index.html`
   directly as a file instead of through the server).
-- `prefs/` — default folder the server scans for `.pref` files. Point
+- `prefs/` — default folder the server scans for `.pref`/`.prefs` files. Point
   `-PrefsDir` elsewhere, or type a different folder path in the UI, to scan
   your real config location instead.
 

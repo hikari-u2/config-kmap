@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     Serves the static frontend (public/) and a small JSON API:
-      GET  /api/list-prefs?dir=<path>        -> list .pref files in a folder
+      GET  /api/list-prefs?dir=<path>        -> list .pref/.prefs files in a folder
       GET  /api/read-pref?path=<file>         -> read contents of a .pref file
       GET  /api/annotations                   -> read annotations.json
       POST /api/annotations  (JSON body)      -> save annotations.json
@@ -18,7 +18,7 @@
     TCP port to listen on. Default 8080.
 
 .PARAMETER PrefsDir
-    Default folder to scan for .pref files. Default ./prefs next to this script.
+    Default folder to scan for .pref/.prefs files. Default ./prefs next to this script.
 #>
 param(
     [int]$Port = 8080,
@@ -160,7 +160,8 @@ try {
                 if (-not (Test-Path $full -PathType Container)) {
                     Write-JsonResponse $response @{ error = "Directory not found: $full" } 404
                 } else {
-                    $files = Get-ChildItem -Path $full -Filter "*.pref" -File -Recurse -ErrorAction SilentlyContinue |
+                    $files = Get-ChildItem -Path $full -File -Recurse -ErrorAction SilentlyContinue |
+                        Where-Object { $_.Extension -eq ".pref" -or $_.Extension -eq ".prefs" } |
                         ForEach-Object {
                             [PSCustomObject]@{
                                 name = $_.Name
