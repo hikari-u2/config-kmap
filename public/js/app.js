@@ -72,6 +72,7 @@
     selectionCount: document.getElementById('selection-count'),
     selectionClearBtn: document.getElementById('selection-clear-btn'),
     exportManualBtn: document.getElementById('export-manual-btn'),
+    toastHost: document.getElementById('toast-host'),
   };
 
   const graph = window.KMapGraph.createGraph(el.graphView);
@@ -168,6 +169,51 @@
   function setStatus(msg, isError) {
     el.status.textContent = msg;
     el.status.classList.toggle('status-error', Boolean(isError));
+    if (isError) showErrorToast(msg);
+  }
+
+  /**
+   * Errors get a floating bubble on top of the status-bar line: the bar is
+   * ambient and easy to miss, and a failed save or export the user never
+   * noticed defeats a memory tool. The bubble auto-dismisses after 8 s
+   * (hovering it pauses that), or on its × button.
+   */
+  function showErrorToast(msg) {
+    // Don't let a burst of failures wallpaper the screen.
+    while (el.toastHost.children.length >= 3) el.toastHost.firstChild.remove();
+
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.setAttribute('role', 'alert');
+
+    const icon = document.createElement('span');
+    icon.className = 'toast-icon';
+    icon.textContent = '!';
+
+    const text = document.createElement('span');
+    text.className = 'toast-text';
+    text.textContent = msg;
+
+    const close = document.createElement('button');
+    close.className = 'toast-close';
+    close.type = 'button';
+    close.setAttribute('aria-label', 'Dismiss');
+    close.textContent = '×';
+
+    const dismiss = () => {
+      if (!toast.isConnected) return;
+      toast.classList.add('toast--out');
+      setTimeout(() => toast.remove(), 240);
+    };
+    close.addEventListener('click', dismiss);
+    let timer = setTimeout(dismiss, 8000);
+    toast.addEventListener('mouseenter', () => clearTimeout(timer));
+    toast.addEventListener('mouseleave', () => { timer = setTimeout(dismiss, 3000); });
+
+    toast.appendChild(icon);
+    toast.appendChild(text);
+    toast.appendChild(close);
+    el.toastHost.appendChild(toast);
   }
 
   async function scanFolder() {
