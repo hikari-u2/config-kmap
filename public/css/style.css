@@ -412,6 +412,15 @@ thead th {
   padding: 0.4rem 0.6rem;
   color: var(--text-dim);
 }
+thead th[data-sort-col] {
+  cursor: pointer;
+  user-select: none;
+}
+thead th[data-sort-col]:hover { color: var(--text); }
+thead th.th-sorted-asc,
+thead th.th-sorted-desc { color: var(--text); }
+thead th.th-sorted-asc::after { content: " \2191"; color: var(--accent); }
+thead th.th-sorted-desc::after { content: " \2193"; color: var(--accent); }
 /* Key gets no fixed width so long dotted keys can push the column wider;
    the other columns keep a comfortable minimum so they don't collapse.
    Columns: Key, Value, Status, Description, Tags, Groups. */

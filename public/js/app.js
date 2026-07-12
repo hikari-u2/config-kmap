@@ -14,6 +14,7 @@
     focusUseful: false,
     view: 'table', // 'table' | 'graph' | 'tree'
     pendingStatus: '', // status selected in detail panel before save (also applied immediately)
+    sort: { col: '', dir: 1 }, // table sort; col '' = file order
   };
 
   const el = {
@@ -278,12 +279,59 @@
     }
   }
 
+  /**
+   * Sort value per column. Strings compare case-insensitively; status maps
+   * to its tree-view rank (useful, unset, not-interested) so sorting by
+   * Status gives the same banding as the tree.
+   */
+  const sortValueFor = {
+    key: (e) => e.key.toLowerCase(),
+    value: (e) => e.value.toLowerCase(),
+    status: (e) => ({ useful: 0, '': 1, useless: 2 }[effectiveStatusForKey(e.key).status]),
+    description: (e) => descriptionForKey(e.key).toLowerCase(),
+    tags: (e) => {
+      const ann = state.annotations[e.key];
+      return ann && ann.tags ? ann.tags.join(', ').toLowerCase() : '';
+    },
+    groups: (e) => groupsForKey(e.key).map((g) => g.name).join(', ').toLowerCase(),
+  };
+
+  function sortedEntries(entries) {
+    const { col, dir } = state.sort;
+    if (!col) return entries; // file order
+    const getVal = sortValueFor[col];
+    // Stable sort; rows with no value for the column always sink to the
+    // bottom so flipping direction reorders the data, not the blanks.
+    return [...entries].sort((a, b) => {
+      const va = getVal(a);
+      const vb = getVal(b);
+      if ((va === '') !== (vb === '')) return va === '' ? 1 : -1;
+      if (va < vb) return -dir;
+      if (va > vb) return dir;
+      return 0;
+    });
+  }
+
+  function updateSortIndicators() {
+    for (const th of document.querySelectorAll('thead th[data-sort-col]')) {
+      const active = th.dataset.sortCol === state.sort.col;
+      th.classList.toggle('th-sorted-asc', active && state.sort.dir === 1);
+      th.classList.toggle('th-sorted-desc', active && state.sort.dir === -1);
+      if (active) {
+        th.setAttribute('aria-sort', state.sort.dir === 1 ? 'ascending' : 'descending');
+      } else {
+        th.removeAttribute('aria-sort');
+      }
+    }
+  }
+
   function renderTable() {
     updateEmptyState();
+    updateSortIndicators();
     const filter = el.searchInput.value.trim();
     el.tableBody.innerHTML = '';
 
-    for (const entry of state.entries) {
+    for (const entry of sortedEntries(state.entries)) {
       if (!matchesFilter(entry.key, entry.value, filter)) continue;
 
       const tr = document.createElement('tr');
@@ -751,6 +799,21 @@
   el.emptyLoadBtn.addEventListener('click', loadSelectedFile);
   el.fileSelect.addEventListener('change', updateEmptyState);
   el.searchInput.addEventListener('input', renderTable);
+  // Header click cycles the column: ascending, descending, then back to
+  // the file's own order (line order matters in a config file).
+  for (const th of document.querySelectorAll('thead th[data-sort-col]')) {
+    th.addEventListener('click', () => {
+      const col = th.dataset.sortCol;
+      if (state.sort.col !== col) {
+        state.sort = { col, dir: 1 };
+      } else if (state.sort.dir === 1) {
+        state.sort.dir = -1;
+      } else {
+        state.sort = { col: '', dir: 1 };
+      }
+      renderTable();
+    });
+  }
   el.saveAnnotationBtn.addEventListener('click', saveCurrentAnnotation);
   el.viewTableBtn.addEventListener('click', () => switchView('table'));
   el.viewGraphBtn.addEventListener('click', () => switchView('graph'));
